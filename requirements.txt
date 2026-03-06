@@ -1,0 +1,20 @@
+requests>=2.28.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+ddgs>=9.0.0
+
+# Optional: TUI (run LUAF with graphical menu)
+textual>=0.40.0
+
+# Optional: local embeddings for RAG (exemplar + multi-hop); omit if using OpenAI embeddings only
+sentence-transformers>=2.2.0
+
+# Optional: designer/planner pipeline (if used from this repo)
+# PyPI pyclips fails on Python 3.12; use Python-3–compatible fork. If build fails (needs CLIPS/C compiler), run: pip install clipspy && pip install planner --no-deps
+pyclips @ git+https://github.com/kyordhel/pyclips3.git@master
+swarms
+toolbox
+planner
+executor
+# Designer quality-packages (validation runs generated agents in this env; add deps the designer may emit)
+tinydb
