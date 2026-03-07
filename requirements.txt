@@ -3,8 +3,8 @@ python-dotenv>=1.0.0
 loguru>=0.7.0
 ddgs>=9.0.0
 
-# Optional: TUI (run LUAF with graphical menu)
-textual>=0.40.0
+# Optional: TUI (run LUAF with interactive menu + Live dashboard)
+rich>=13.0.0
 
 # Optional: local embeddings for RAG (exemplar + multi-hop); omit if using OpenAI embeddings only
 sentence-transformers>=2.2.0

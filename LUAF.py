@@ -8,16 +8,8 @@ import requests
 from dotenv import load_dotenv
 from loguru import logger
 try:
-    import textual
-    _TEXTUAL_AVAILABLE = True
+    from luaf_tui import create_luaf_app
 except ImportError:
-    _TEXTUAL_AVAILABLE = False
-if _TEXTUAL_AVAILABLE:
-    try:
-        from luaf_tui import create_luaf_app
-    except ImportError:
-        create_luaf_app = None
-else:
     create_luaf_app = None
 try:
     from toolbox.templates import get_template as _get_template
@@ -53,6 +45,11 @@ try:
 except ImportError:
     _run_social_autonomy = None
 from luaf_publish import publish_agent, get_private_key_from_env, get_creator_pubkey, get_solana_balance, load_agents_registry as _load_agents_registry, append_agent_to_registry, claim_fees, run_delayed_claim_pass
+try:
+    from luaf_profiles import list_profiles as _list_profiles, get_default_profile as _get_default_profile_impl
+except ImportError:
+    _list_profiles = None
+    _get_default_profile_impl = None
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _LUAF_DIR = Path(__file__).resolve().parent
 load_dotenv(_REPO_ROOT / '.env')
@@ -175,6 +172,160 @@ _designer_prompt_path = _LUAF_DIR / 'designer_system_prompt.txt'
 DESIGNER_SYSTEM_PROMPT = _designer_prompt_path.read_text(encoding='utf-8') if _designer_prompt_path.exists() else ''
 if not DESIGNER_SYSTEM_PROMPT.strip():
     logger.warning('designer_system_prompt.txt not found next to LUAF.py; designer may not behave as expected')
+PROFILES_DIR = _LUAF_DIR / 'profiles'
+_DEFAULT_TOPIC_PROMPT = 'Generate exactly one concrete, autonomous business idea that is monetizable and tokenizable. It must make money without a frontend: e.g. API usage, token fees, data/arbitrage/sellable output, automated backends—no subscription sites, dashboards, or SaaS UIs. Reply with only that one sentence, no quotes, no explanation, no bullet points.'
+_DEFAULT_PRODUCT_FOCUS = 'Product focus: Tokenized units only; revenue via API usage, token fees, data/arbitrage/sellable output—not via products that need a web frontend (no subscription UI, dashboard, or SaaS customer-facing app).'
+_active_profile: Optional[dict[str, Any]] = None
+
+
+def _get_default_profile() -> dict[str, Any]:
+    """Return the default profile (current designer_system_prompt.txt + default topic/focus)."""
+    if _get_default_profile_impl is None:
+        return {
+            'id': 'default',
+            'display_name': 'default',
+            'system_prompt': DESIGNER_SYSTEM_PROMPT,
+            'topic_prompt': _DEFAULT_TOPIC_PROMPT,
+            'product_focus': _DEFAULT_PRODUCT_FOCUS,
+        }
+    return _get_default_profile_impl(_designer_prompt_path, _DEFAULT_TOPIC_PROMPT, _DEFAULT_PRODUCT_FOCUS)
+
+
+def get_active_profile() -> dict[str, Any]:
+    """Return the currently active profile; if none set, return default."""
+    global _active_profile
+    if _active_profile is not None:
+        return _active_profile
+    return _get_default_profile()
+
+
+def _generate_profile_from_keywords(keywords: str) -> Optional[dict[str, Any]]:
+    """Call LLM to generate a profile (system_prompt, topic_prompt, product_focus) from keywords. In-memory only; follows same rules (plain text, no MD, backend monetization). Returns profile dict or None on failure."""
+    keywords = (keywords or '').strip()[:500]
+    if not keywords:
+        return None
+    api_key = os.environ.get('OPENAI_API_KEY', '').strip()
+    base_url = (os.environ.get('OPENAI_BASE_URL') or 'https://api.openai.com/v1').strip()
+    if not api_key:
+        logger.warning('OPENAI_API_KEY not set; cannot generate profile from keywords.')
+        return None
+    system = """You generate a LUAF designer profile from keywords. Output exactly three sections, using these headers alone on their own line:
+## SYSTEM_PROMPT
+## TOPIC_PROMPT
+## PRODUCT_FOCUS
+
+Rules: Plain text only in all sections. No Markdown (no bold, no ## inside content, no bullet lists). Revenue must be achievable without a customer-facing web app (API, data, automation, backend only). SYSTEM_PROMPT must be a full designer system prompt (same structure as LUAF: programming excellence, size 300+ lines, utility and monetization, product focus paragraph, output rules, process, agent architecture, code quality, listing metadata, JSON format). TOPIC_PROMPT is one paragraph to generate a single business idea. PRODUCT_FOCUS is one short paragraph for the designer user message. Output nothing before ## SYSTEM_PROMPT and nothing after the PRODUCT_FOCUS content."""
+    user = f"Generate a LUAF profile for these keywords: {keywords}"
+    try:
+        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json={'model': LLM_MODEL, 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 'temperature': 0.7, 'max_tokens': 4096}, timeout=min(120, LLM_HTTP_TIMEOUT))
+        if not resp.ok:
+            logger.warning('LLM profile generation failed: {}', resp.status_code)
+            return None
+        content = (resp.json().get('choices') or [{}])[0].get('message', {}).get('content') or ''
+        if not content.strip():
+            return None
+        parts = re.split(r'\n##\s+(SYSTEM_PROMPT|TOPIC_PROMPT|PRODUCT_FOCUS)\s*\n', content.strip(), flags=re.IGNORECASE)
+        result: dict[str, str] = {}
+        i = 1
+        while i + 1 < len(parts):
+            header = (parts[i] or '').strip().upper()
+            body = (parts[i + 1] or '').strip()
+            if header == 'SYSTEM_PROMPT':
+                result['system_prompt'] = body
+            elif header == 'TOPIC_PROMPT':
+                result['topic_prompt'] = body
+            elif header == 'PRODUCT_FOCUS':
+                result['product_focus'] = body
+            i += 2
+        if not result.get('system_prompt'):
+            logger.warning('LLM profile response missing SYSTEM_PROMPT.')
+            return None
+        return {
+            'id': 'generated',
+            'display_name': f'Generated: {keywords[:40]}{"…" if len(keywords) > 40 else ""}',
+            'system_prompt': result.get('system_prompt', ''),
+            'topic_prompt': result.get('topic_prompt') or None,
+            'product_focus': result.get('product_focus') or None,
+        }
+    except Exception as e:
+        logger.warning('Generate profile from keywords failed: {}', e)
+        return None
+
+
+def _ticker_select_cli(options: list[dict[str, Any]], prompt: str = 'Select profile:') -> int:
+    """Ls-style ticker-select: list one per line; use questionary if available else number input. Returns index."""
+    if not options:
+        return 0
+    n = len(options)
+    try:
+        import questionary
+        choices = [p.get('display_name', p.get('id', '')) for p in options]
+        ans = questionary.select(prompt, choices=choices).ask()
+        if ans is None:
+            return 0
+        for i, p in enumerate(options):
+            if p.get('display_name', p.get('id', '')) == ans:
+                return i
+        return 0
+    except ImportError:
+        pass
+    print('  ' + prompt)
+    for i, p in enumerate(options):
+        print(f'    {i}  {p.get("display_name", p.get("id", ""))}')
+    try:
+        raw = input('  Choice [0]: ').strip() or '0'
+        idx = max(0, min(n - 1, int(raw)))
+    except (ValueError, EOFError, KeyboardInterrupt):
+        idx = 0
+    return idx
+
+
+def run_profile_selection() -> dict[str, Any]:
+    """Show ls-style profile ticker-select (or use LUAF_PROFILE); set and return active profile. When stdin is not a TTY, use LUAF_PROFILE or default (no menu)."""
+    global _active_profile
+    env_id = (os.environ.get('LUAF_PROFILE') or '').strip()
+    is_tty = getattr(sys.stdin, 'isatty', lambda: False)()
+    if env_id:
+        if _list_profiles is not None and PROFILES_DIR.is_dir():
+            for p in _list_profiles(PROFILES_DIR):
+                if (p.get('id') or '').lower() == env_id.lower():
+                    _active_profile = p
+                    logger.info('Profile: {}', p.get('display_name', env_id))
+                    return _active_profile
+        if env_id.lower() == 'default':
+            _active_profile = _get_default_profile()
+            return _active_profile
+        logger.warning('LUAF_PROFILE={} not found; using default profile.', env_id)
+    default = _get_default_profile()
+    if not is_tty:
+        _active_profile = default
+        return _active_profile
+    options = [default]
+    if _list_profiles is not None and PROFILES_DIR.is_dir():
+        options = [default] + _list_profiles(PROFILES_DIR)
+    options.append({'id': '_generate', 'display_name': 'Generate from keywords...', '_generated_from_keywords': True})
+    if len(options) == 1:
+        _active_profile = default
+        return _active_profile
+    idx = _ticker_select_cli(options)
+    chosen = options[idx]
+    if chosen.get('_generated_from_keywords'):
+        try:
+            kw = input('  Keywords (e.g. healthcare API, B2B): ').strip() if getattr(sys.stdin, 'isatty', lambda: False)() else ''
+        except (EOFError, KeyboardInterrupt):
+            kw = ''
+        gen = _generate_profile_from_keywords(kw)
+        _active_profile = gen if gen else default
+        if not gen:
+            logger.warning('Using default profile after failed keyword generation.')
+        else:
+            logger.info('Profile: {}', _active_profile.get('display_name', 'generated'))
+    else:
+        _active_profile = chosen
+        logger.info('Profile: {}', _active_profile.get('display_name', _active_profile.get('id', 'default')))
+    return _active_profile
+
+
 def _search_duckduckgo_impl(query: str, max_results: int) -> str:
     try:
         from ddgs import DDGS
@@ -296,7 +447,7 @@ def _parse_missing_module(stderr: str) -> Optional[str]:
 
 def _pip_install_module(module: str, timeout: int=120) -> tuple[bool, str]:
     try:
-        proc = subprocess.run([sys.executable, '-m', 'pip', 'install', module], capture_output=True, timeout=timeout, env=os.environ.copy())
+        proc = subprocess.run([sys.executable, '-m', 'pip', 'install', '--break-system-packages', module], capture_output=True, timeout=timeout, env=os.environ.copy())
         err = (proc.stderr or b'').decode('utf-8', errors='replace').strip()
         if proc.returncode != 0:
             out = (proc.stdout or b'').decode('utf-8', errors='replace').strip()
@@ -420,7 +571,8 @@ def _run_swarms_agent(prompt: str, model: str, api_key: str, base_url: str, temp
 def _generate_topic_via_llm(api_key: str, base_url: str, model: str=LLM_MODEL) -> str:
     if not (api_key or '').strip() or not (base_url or '').strip():
         return ''
-    prompt = 'Generate exactly one concrete, autonomous business idea that is monetizable. It should be an idea that can run with minimal oversight and create real value (revenue, leads, data, arbitrage, sellable output). Reply with only that one sentence, no quotes, no explanation, no bullet points.'
+    profile = get_active_profile()
+    prompt = (profile.get('topic_prompt') or _DEFAULT_TOPIC_PROMPT).strip()
     try:
         resp = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json={'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 120, 'temperature': 0.8}, timeout=min(60, LLM_HTTP_TIMEOUT))
         if not resp.ok:
@@ -487,7 +639,7 @@ def _designer_subprocess_entry() -> None:
         return
     try:
         data = json.loads(Path(in_path).read_text(encoding='utf-8'))
-        raw = get_agent_payload_from_llm(topic=data['topic'], search_snippets=data.get('search_snippets', ''), model=data.get('model', LLM_MODEL), api_key=data.get('api_key', ''), base_url=data.get('base_url', 'https://api.openai.com/v1'), existing_names=data.get('existing_names'), existing_tickers=data.get('existing_tickers'), temperature=data.get('temperature'), validation_feedback=data.get('validation_feedback'), template_id=data.get('template_id'), retrieved_exemplars=data.get('retrieved_exemplars'))
+        raw = get_agent_payload_from_llm(topic=data['topic'], search_snippets=data.get('search_snippets', ''), model=data.get('model', LLM_MODEL), api_key=data.get('api_key', ''), base_url=data.get('base_url', 'https://api.openai.com/v1'), existing_names=data.get('existing_names'), existing_tickers=data.get('existing_tickers'), temperature=data.get('temperature'), validation_feedback=data.get('validation_feedback'), template_id=data.get('template_id'), retrieved_exemplars=data.get('retrieved_exemplars'), system_prompt_override=data.get('system_prompt'), product_focus_override=data.get('product_focus'))
         Path(out_path).write_text(raw or '', encoding='utf-8')
     except Exception as e:
         Path(out_path).write_text(f'', encoding='utf-8')
@@ -499,7 +651,8 @@ def _run_designer_in_subprocess(topic: str, search_snippets: str, model: str, ap
     fd_out, path_out = tempfile.mkstemp(prefix='luaf_designer_out_', suffix='.txt', text=True)
     try:
         os.close(fd_out)
-        payload = {'topic': topic, 'search_snippets': search_snippets, 'model': model, 'api_key': api_key, 'base_url': base_url, 'existing_names': list(existing_names) if existing_names is not None else [], 'existing_tickers': list(existing_tickers) if existing_tickers is not None else [], 'temperature': temperature, 'validation_feedback': validation_feedback, 'template_id': template_id, 'retrieved_exemplars': retrieved_exemplars if retrieved_exemplars is not None else []}
+        profile = get_active_profile()
+        payload = {'topic': topic, 'search_snippets': search_snippets, 'model': model, 'api_key': api_key, 'base_url': base_url, 'existing_names': list(existing_names) if existing_names is not None else [], 'existing_tickers': list(existing_tickers) if existing_tickers is not None else [], 'temperature': temperature, 'validation_feedback': validation_feedback, 'template_id': template_id, 'retrieved_exemplars': retrieved_exemplars if retrieved_exemplars is not None else [], 'system_prompt': profile.get('system_prompt'), 'product_focus': profile.get('product_focus')}
         with os.fdopen(fd_in, 'w', encoding='utf-8') as f:
             json.dump(payload, f, indent=0)
         env = os.environ.copy()
@@ -522,7 +675,7 @@ def _run_designer_in_subprocess(topic: str, search_snippets: str, model: str, ap
         except OSError:
             pass
 
-def _build_designer_user_message(topic: str, search_snippets: str, existing_names: Optional[Iterable[str]], existing_tickers: Optional[Iterable[str]], validation_feedback: Optional[str], template: Any, retrieved_exemplars: Optional[list[str]]=None) -> str:
+def _build_designer_user_message(topic: str, search_snippets: str, existing_names: Optional[Iterable[str]], existing_tickers: Optional[Iterable[str]], validation_feedback: Optional[str], template: Any, retrieved_exemplars: Optional[list[str]]=None, product_focus_override: Optional[str]=None) -> str:
     sections: list[str] = []
     sections.append('## Topic\n' + (topic or '(none)'))
     sections.append('\n' + _format_quality_packages_for_topic(topic or ''))
@@ -540,7 +693,8 @@ def _build_designer_user_message(topic: str, search_snippets: str, existing_name
     angle = random.choice(DESIGN_ANGLES)
     sections.append(f'\n## Design parameters\nSeed: {seed}. Angle: {angle}.')
     required_keys = ', '.join(sorted(REQUIRED_PAYLOAD_KEYS))
-    sections.append(f"\n## Instructions\nFollow your process: Clarify → Architect → Implement → Describe. Write as an expert programmer: type hints, defensive code, real APIs, no dead code. The agent's task must be executable to generate profit or measurable value; design for real-world utility. Output ONLY the single JSON object. No other text, no reasoning, no markdown. Use the swarms Agent; no stubs or placeholders; full production-quality code. The agent code must be at least 300 substantive lines (400+ preferred); no boilerplate or examples—only fully functioning runnable code. The script is validated by running it with no arguments (python script.py). Make all CLI arguments optional (e.g. argparse: use default=, never required=True).\n**Required top-level keys (exactly these, no others): {required_keys}. agent = full Python code string; useCases = array of {{{{title, description}}}}; requirements = array of {{{{package, installation}}}}; is_free = true.")
+    product_focus = (product_focus_override or _DEFAULT_PRODUCT_FOCUS).strip()
+    sections.append(f"\n## Instructions\nFollow your process: Clarify → Architect → Implement → Describe. Write as an expert programmer: type hints, defensive code, real APIs, no dead code. The agent's task must be executable to generate profit or measurable value; design for real-world utility. {product_focus} Output ONLY the single JSON object. No other text, no reasoning, no markdown. Use the swarms Agent; no stubs or placeholders; full production-quality code. The agent code must be at least 300 substantive lines (400+ preferred); no boilerplate or examples—only fully functioning runnable code. The script is validated by running it with no arguments (python script.py). Make all CLI arguments optional (e.g. argparse: use default=, never required=True).\n**Required top-level keys (exactly these, no others): {required_keys}. agent = full Python code string; useCases = array of {{{{title, description}}}}; requirements = array of {{{{package, installation}}}}; is_free = true.")
     if validation_feedback and validation_feedback.strip():
         sections.append('\n## Previous validation failure (fix before re-outputting)\nAddress every line of the validation error below. Fix all reported issues (imports, syntax, runtime). Then output only the corrected JSON object with no other text.\n\n' + validation_feedback.strip())
     if template:
@@ -550,7 +704,7 @@ def _build_designer_user_message(topic: str, search_snippets: str, existing_name
             sections.append('\n## Code skeleton (expand into full implementation)\n\n' + template.code_skeleton)
     return '\n'.join(sections).strip()
 
-def get_agent_payload_from_llm(topic: str, search_snippets: str, model: str, api_key: str, base_url: str, use_swarms_agent: bool=True, existing_names: Optional[Iterable[str]]=None, existing_tickers: Optional[Iterable[str]]=None, temperature: Optional[float]=None, validation_feedback: Optional[str]=None, template_id: Optional[str]=None, retrieved_exemplars: Optional[list[str]]=None) -> str:
+def get_agent_payload_from_llm(topic: str, search_snippets: str, model: str, api_key: str, base_url: str, use_swarms_agent: bool=True, existing_names: Optional[Iterable[str]]=None, existing_tickers: Optional[Iterable[str]]=None, temperature: Optional[float]=None, validation_feedback: Optional[str]=None, template_id: Optional[str]=None, retrieved_exemplars: Optional[list[str]]=None, system_prompt_override: Optional[str]=None, product_focus_override: Optional[str]=None) -> str:
     if temperature is None:
         temperature = LLM_TEMPERATURE
     template = None
@@ -558,10 +712,11 @@ def get_agent_payload_from_llm(topic: str, search_snippets: str, model: str, api
         template = _get_template(template_id)
         if template:
             logger.info('Using template: {}', template_id)
-    system = DESIGNER_SYSTEM_PROMPT.strip() + '\n\nSWARMS REF:' + SWARMS_AGENT_DOCS
+    base_system = (system_prompt_override or get_active_profile().get('system_prompt') or DESIGNER_SYSTEM_PROMPT).strip()
+    system = base_system + '\n\nSWARMS REF:' + SWARMS_AGENT_DOCS
     if template and getattr(template, 'system_fragment', None):
         system += '\n\n' + (template.system_fragment or '')
-    user = _build_designer_user_message(topic=topic, search_snippets=search_snippets, existing_names=existing_names, existing_tickers=existing_tickers, validation_feedback=validation_feedback, template=template, retrieved_exemplars=retrieved_exemplars)
+    user = _build_designer_user_message(topic=topic, search_snippets=search_snippets, existing_names=existing_names, existing_tickers=existing_tickers, validation_feedback=validation_feedback, template=template, retrieved_exemplars=retrieved_exemplars, product_focus_override=product_focus_override or get_active_profile().get('product_focus'))
     task_auto = user + f'\n\nSave final JSON to {FINAL_PAYLOAD_FILENAME} via create_file. Then complete_task.'
     if DESIGNER_USE_DIRECT_API and (api_key or '').strip() and (base_url or '').strip():
         try:
@@ -606,7 +761,7 @@ def get_agent_payload_from_llm(topic: str, search_snippets: str, model: str, api
         raise RuntimeError('LLM response had no choices')
     return (choices[0].get('message', {}).get('content') or '').strip()
 
-def _extract_json_object_spans_DEL(text: str) -> list[tuple[int, int]]:
+def _extract_json_object_spans(text: str) -> list[tuple[int, int]]:
     if not text:
         return []
     spans, depth, start, i, in_str, esc, qc, n = ([], 0, None, 0, False, False, None, len(text))
@@ -639,6 +794,8 @@ def _extract_json_object_spans_DEL(text: str) -> list[tuple[int, int]]:
         i += 1
     return spans
 
+_extract_json_object_spans_DEL = _extract_json_object_spans  # legacy alias
+
 def _extract_first_json_object(text: str) -> str:
     s = _extract_json_object_spans(text)
     return text[s[0][0]:s[0][1]] if s else ''
@@ -646,24 +803,6 @@ def _extract_first_json_object(text: str) -> str:
 def _extract_last_json_object(text: str) -> str:
     s = _extract_json_object_spans(text)
     return text[s[-1][0]:s[-1][1]] if s else ''
-
-def parse_agent_payload(raw: str) -> dict[str, Any]:
-    if not (raw or '').strip():
-        raise ValueError('Empty LLM output')
-    js = _extract_first_json_object(_strip_json_code_fence(raw))
-    if not js:
-        raise ValueError('No JSON object found')
-    try:
-        payload = json.loads(_fix_common_json_issues(js))
-    except json.JSONDecodeError as e:
-        raise ValueError(f'Invalid JSON: {e}') from e
-    if not isinstance(payload, dict):
-        raise ValueError('Not a JSON object')
-    missing = REQUIRED_PAYLOAD_KEYS - set(payload.keys())
-    if missing:
-        raise ValueError(f'Missing keys: {sorted(missing)}')
-    payload['is_free'] = True
-    return payload
 
 DESIGNER_EXEMPLARS_PATH = _LUAF_DIR / 'designer_exemplars.jsonl'
 _exemplar_cache: Optional[list[tuple[list[float], str]]] = None
@@ -1256,6 +1395,7 @@ def run_persistent() -> None:
             time.sleep(PERSISTENT_LOOP_SLEEP_SECONDS)
 
 def run_standalone_cli() -> None:
+    run_profile_selection()
     _menu = '\n  ╭─────────────────────────────────────╮\n  │  LUAF  —  brief → research → launch  │\n  ╰─────────────────────────────────────╯\n    1. Pipeline   (design & launch autonomous unit)\n    2. Persistent (autonomous loop until target SOL)\n    0. Exit\n'
     _handlers: dict[str, Any] = {'1': main, '2': run_persistent, '0': None}
     while True:
@@ -1274,13 +1414,22 @@ def run_standalone_cli() -> None:
             print('  Unknown. Use 1 (Pipeline), 2 (Autonomous loop), or 0 (Exit).')
 
 def run_interactive_menu() -> None:
-    if _TEXTUAL_AVAILABLE and create_luaf_app:
+    if create_luaf_app:
         def _set_stop() -> None:
             global _tui_stop_requested
             _tui_stop_requested = True
         def _get_state() -> tuple[str, int, str, str]:
             return (_tui_current_topic, _tui_session_published, _tui_session_last_name, _tui_stopped_reason)
-        config: dict[str, Any] = {'get_creator_pubkey': get_creator_pubkey, 'get_solana_balance': get_solana_balance, 'load_agents_registry': lambda: _load_agents_registry(AGENTS_REGISTRY_PATH), 'target_sol': PERSISTENT_TARGET_SOL, 'registry_path': AGENTS_REGISTRY_PATH, 'rpc_url': SOLANA_RPC_URL, 'set_stop_requested': _set_stop, 'get_tui_state': _get_state, 'log_queue': _log_queue}
+        default = _get_default_profile()
+        profile_options_list: list[dict[str, Any]] = [default]
+        if _list_profiles is not None and PROFILES_DIR.is_dir():
+            profile_options_list = [default] + _list_profiles(PROFILES_DIR)
+        def _on_profile_selected(idx: int) -> None:
+            global _active_profile
+            if 0 <= idx < len(profile_options_list):
+                _active_profile = profile_options_list[idx]
+                logger.info('Profile: {}', _active_profile.get('display_name', _active_profile.get('id', 'default')))
+        config: dict[str, Any] = {'get_creator_pubkey': get_creator_pubkey, 'get_solana_balance': get_solana_balance, 'load_agents_registry': lambda: _load_agents_registry(AGENTS_REGISTRY_PATH), 'target_sol': PERSISTENT_TARGET_SOL, 'registry_path': AGENTS_REGISTRY_PATH, 'rpc_url': SOLANA_RPC_URL, 'set_stop_requested': _set_stop, 'get_tui_state': _get_state, 'log_queue': _log_queue, 'profile_options': profile_options_list, 'on_profile_selected': _on_profile_selected}
         LUAFApp = create_luaf_app(run_persistent, config)
         app = LUAFApp()
         app.run()
@@ -1481,8 +1630,10 @@ if __name__ == '__main__':
         topic = (args.self_train if args.self_train else TOPIC).strip()[:500] or TOPIC
         sys.exit(0 if _luaf_run_self_train(topic) else 1)
     if args.persistent:
+        run_profile_selection()
         run_persistent()
     elif args.once:
+        run_profile_selection()
         main()
     elif args.no_tui:
         run_standalone_cli()
