@@ -1,0 +1,8 @@
+{
+  "embedding_models": [
+    "all-MiniLM-L6-v2"
+  ],
+  "source": "designer_exemplars.jsonl",
+  "n_records": 10,
+  "dim": 384
+}
