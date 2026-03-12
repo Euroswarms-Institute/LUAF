@@ -10,7 +10,7 @@ readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-authors = "ESRD_Division"
+authors = ["ESRD_Division"]
 keywords = [
     "agents",
     "swarms",
