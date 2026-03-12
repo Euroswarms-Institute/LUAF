@@ -41,6 +41,13 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Check PyPI token
+        run: |
+          if [ -z "${{ secrets.PYPI_API_TOKEN }}" ]; then
+            echo "::error::PYPI_API_TOKEN is not set. Add it at: Repo → Settings → Secrets and variables → Actions → New repository secret. Create a token at https://pypi.org/manage/account/token/"
+            exit 1
+          fi
+
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
