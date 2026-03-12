@@ -1,4 +1,7 @@
-"""LUAF TUI: profile selection then dashboard with metrics and live log. Uses Rich (no Textual)."""
+"""LUAF TUI: profile selection then dashboard with metrics and live log. Pure Rich.
+
+Design spec: tui.css (palette and layout). No Textual; palette encoded here.
+"""
 from __future__ import annotations
 import queue
 import sys
@@ -6,6 +9,19 @@ import threading
 import time
 from typing import Any, Callable
 from loguru import logger
+
+# Palette from tui.css: background #0a0b0d, surface #11141a, border #1e2530,
+# header #8b9dc3, muted #5a6478, tagline #6b7280, metric value #7dd3fc,
+# warn #fbbf24, success #34d399, log bg #070809.
+_STYLE_HEADER = "#8b9dc3 bold"
+_STYLE_MUTED = "#5a6478"
+_STYLE_TAGLINE = "#6b7280"
+_STYLE_ACCENT = "#7dd3fc bold"
+_STYLE_WARN = "#fbbf24"
+_STYLE_SUCCESS = "#34d399"
+_STYLE_LOG_BG = "on #070809"
+_STYLE_PANEL_BORDER = "#1e2530"
+_STYLE_PANEL_SURFACE = "on #11141a"
 
 _log_sink_id: int | None = None
 
@@ -38,7 +54,7 @@ def remove_log_sink() -> None:
 
 
 def _profile_select(profile_options: list[dict[str, Any]], on_profile_selected: Callable[[int], None]) -> None:
-    """Show ls-style profile selection; call on_profile_selected with chosen index."""
+    """Show profile selection; call on_profile_selected with chosen index."""
     if not profile_options:
         return
     try:
@@ -66,7 +82,7 @@ def _profile_select(profile_options: list[dict[str, Any]], on_profile_selected: 
 
 
 def _read_key_nonblocking() -> str | None:
-    """Read a single key if available. Returns None if no key. Windows: msvcrt; Unix: select+read (may need raw mode)."""
+    """Read a single key if available. Returns None if no key."""
     try:
         if sys.platform == "win32":
             import msvcrt
@@ -96,7 +112,7 @@ def create_luaf_app(run_persistent_fn: Callable[[], None], config: dict[str, Any
     on_profile_selected: Callable[[int], None] = config.get("on_profile_selected") or (lambda _: None)
 
     class LUAFApp:
-        """Rich-based TUI: profile select then Live dashboard. Same contract as Textual app (instantiate and .run())."""
+        """Rich TUI: header, metric cards strip, log section, footer. Contract: .run()."""
 
         def __init__(self) -> None:
             self._run_fn = run_persistent_fn
@@ -157,10 +173,7 @@ def create_luaf_app(run_persistent_fn: Callable[[], None], config: dict[str, Any
                 balance = get_solana_balance(pubkey, rpc_url) if pubkey else None
             except Exception:
                 balance = None
-            if balance is not None:
-                bal_str = f"{balance:.4f}"
-            else:
-                bal_str = "—"
+            bal_str = f"{balance:.4f}" if balance is not None else "—"
             status = "Ready"
             if self._worker and self._worker.is_alive():
                 status = "Running…"
@@ -168,35 +181,42 @@ def create_luaf_app(run_persistent_fn: Callable[[], None], config: dict[str, Any
                 status = "Target reached"
             elif stopped_reason == "stop":
                 status = "Stopped"
+            brief_short = (topic or "—")[:18] + ("…" if (topic or "") and len(topic or "") > 18 else "")
 
-            table = Table(expand=True, show_header=False)
-            for _ in range(14):
-                table.add_column(style="dim" if _ % 2 == 0 else "bold cyan", min_width=4)
-            brief_short = (topic or "—")[:20] + ("…" if (topic or "") and len(topic or "") > 20 else "")
+            def card(label: str, value: str, value_style: str = _STYLE_ACCENT) -> Any:
+                return Group(Text(label, style=_STYLE_MUTED), Text(value, style=value_style))
+
+            status_style = _STYLE_SUCCESS if status == "Target reached" else (_STYLE_WARN if status == "Stopped" else _STYLE_ACCENT)
+            table = Table(show_header=False, expand=True, box=None, padding=(0, 1))
+            for _ in range(7):
+                table.add_column(style=_STYLE_MUTED, min_width=6)
             table.add_row(
-                "BALANCE", bal_str,
-                "TARGET", f"{target_sol:.1f}",
-                "LAUNCHED", n_agents,
-                "STATUS", status,
-                "BRIEF", brief_short,
-                "RUN", str(sess_pub),
-                "LAST", last_name or "—",
+                card("BALANCE", bal_str),
+                card("TARGET", f"{target_sol:.1f}"),
+                card("LAUNCHED", n_agents),
+                card("STATUS", status, status_style),
+                card("BRIEF", brief_short),
+                card("RUN", str(sess_pub)),
+                card("LAST", last_name or "—"),
             )
+            dashboard_panel = Panel(table, title="", border_style="dim", padding=(0, 1), style=_STYLE_PANEL_SURFACE)
 
-            metrics_panel = Panel(table, title="LUAF  brief → research → build → validate → launch", padding=(0, 1))
+            header = Text("LUAF  —  brief → research → build → validate → launch", style=_STYLE_HEADER)
+            tagline = Text("Autonomous mode. Persistent loop running.", style=_STYLE_TAGLINE)
             try:
-                log_text = Text.from_markup("\n".join(self._log_lines[-80:]))
+                log_text = Text.from_markup("\n".join(self._log_lines[-70:]))
             except Exception:
-                log_text = Text.from_plain_text("\n".join(self._log_lines[-80:]), style="dim")
-            log_panel = Panel(log_text, title="LIVE FEED  [dim]s Stop  q Quit[/]", padding=(0, 1))
-            return Group(metrics_panel, "", log_panel)
+                log_text = Text.from_plain_text("\n".join(self._log_lines[-70:]), style=_STYLE_MUTED)
+            log_panel = Panel(log_text, title="LIVE FEED", border_style="dim", padding=(0, 1), style=_STYLE_LOG_BG)
+            footer = Text("  s Stop   q Quit", style=_STYLE_MUTED)
+
+            return Group(header, tagline, "", dashboard_panel, "", log_panel, "", footer)
 
         def _run_live_dashboard(self) -> None:
             from rich.console import Console
             from rich.live import Live
 
-            console = Console()
-            renderable_holder: list[Any] = [None]
+            console = Console(force_terminal=True)
             saved_tty: Any = None
             if sys.platform != "win32" and sys.stdin.isatty():
                 try:
@@ -209,8 +229,7 @@ def create_luaf_app(run_persistent_fn: Callable[[], None], config: dict[str, Any
                     saved_tty = None
 
             def get_renderable() -> Any:
-                renderable_holder[0] = self._build_renderable()
-                return renderable_holder[0]
+                return self._build_renderable()
 
             try:
                 with Live(get_renderable(), refresh_per_second=8, screen=True, console=console) as live:

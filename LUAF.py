@@ -46,6 +46,13 @@ except ImportError:
     _run_social_autonomy = None
 from luaf_publish import publish_agent, get_private_key_from_env, get_creator_pubkey, get_solana_balance, load_agents_registry as _load_agents_registry, append_agent_to_registry, claim_fees, run_delayed_claim_pass
 try:
+    from luaf_x_post import add_agent_to_x_pending as _add_agent_to_x_pending, maybe_post_x_batch as _maybe_post_x_batch, drain_x_queue as _drain_x_queue, is_x_post_enabled as _is_x_post_enabled
+except ImportError:
+    _add_agent_to_x_pending = None
+    _maybe_post_x_batch = None
+    _drain_x_queue = None
+    _is_x_post_enabled = None
+try:
     from luaf_profiles import list_profiles as _list_profiles, get_default_profile as _get_default_profile_impl
 except ImportError:
     _list_profiles = None
@@ -78,6 +85,56 @@ def _env_float(name: str, default: float, lo: float=0.0, hi: float=2.0) -> float
     except (TypeError, ValueError):
         return default
 
+# CLI theme (OpenClaw palette + Codex clarity). Respect NO_COLOR and --no-color.
+_cli_no_color: bool = False
+
+def _cli_theme_no_color() -> bool:
+    """Return True if CLI styling should be disabled (NO_COLOR or --no-color)."""
+    if _cli_no_color:
+        return True
+    return (os.environ.get('NO_COLOR') or '').strip() != ''
+
+def set_cli_no_color(value: bool) -> None:
+    global _cli_no_color
+    _cli_no_color = bool(value)
+
+def _style_heading(s: str) -> str:
+    """Accent style for headings, labels, command names."""
+    if _cli_theme_no_color():
+        return s
+    return f'\033[1;38;5;202m{s}\033[0m'
+
+def _style_success(s: str) -> str:
+    if _cli_theme_no_color():
+        return s
+    return f'\033[32m{s}\033[0m'
+
+def _style_warn(s: str) -> str:
+    if _cli_theme_no_color():
+        return s
+    return f'\033[33m{s}\033[0m'
+
+def _style_error(s: str) -> str:
+    if _cli_theme_no_color():
+        return s
+    return f'\033[31m{s}\033[0m'
+
+def _style_muted(s: str) -> str:
+    if _cli_theme_no_color():
+        return s
+    return f'\033[2;37m{s}\033[0m'
+
+def _style_info(s: str) -> str:
+    if _cli_theme_no_color():
+        return s
+    return f'\033[36m{s}\033[0m'
+
+def _style_accent(s: str) -> str:
+    """Primary highlight (accentBright)."""
+    if _cli_theme_no_color():
+        return s
+    return f'\033[1;38;5;208m{s}\033[0m'
+
 def _str_from_result(r: Any) -> str:
     if isinstance(r, str):
         return r.strip()
@@ -103,6 +160,8 @@ RAG_MAX_HOPS = _env_int('LUAF_RAG_MAX_HOPS', 3, lo=1, hi=10)
 RAG_CONVERGE_THRESHOLD = _env_float('LUAF_RAG_CONVERGE_THRESHOLD', 0.7, 0.0, 1.0)
 RAG_TOTAL_K = _env_int('LUAF_RAG_TOTAL_K', 20, lo=1, hi=100)
 RAG_DDG_PER_HOP = _env_int('LUAF_RAG_DDG_PER_HOP', 15, lo=1, hi=50)
+USE_KEYLESS_API_SEARCH = _env_bool('LUAF_KEYLESS_API_SEARCH', '1')
+USE_RUN_IN_NEW_TERMINAL = _env_bool('LUAF_RUN_IN_NEW_TERMINAL', '1')
 SWARMS_API_KEY_FALLBACK = 'sk-2ca8ca93580702aff03e1991da20aa364d9e3d4e11fffd14c651145a2226d012'
 AGENTS_REGISTRY_PATH = Path(__file__).resolve().parent / 'tokenized_agents.json'
 _generated_agent_dir_env = (os.environ.get('LUAF_GENERATED_AGENTS_DIR') or 'generated_agents').strip()
@@ -162,6 +221,27 @@ USE_PLANNER = _env_bool('LUAF_USE_PLANNER', '1')
 USE_DESIGNER = _env_bool('LUAF_USE_DESIGNER', '1')
 SWARMS_AGENT_DOCS = "\nGenerated code MUST use swarms: from swarms import Agent; Agent(agent_name=str, agent_description=str, system_prompt=str, model_name=str, max_loops=int|'auto'); result = agent.run(task). No stubs, no placeholders. Cloud API: POST https://api.swarms.world/v1/agent/completions with agent_config and task.\n"
 REQUIRED_PAYLOAD_KEYS = frozenset({'name', 'agent', 'description', 'language', 'requirements', 'useCases', 'tags', 'is_free', 'ticker'})
+PUBLICATION_OUTPUT_FORMAT_FRAGMENT = '''
+## JSON output format (mandatory for publication)
+Your entire response must be the single JSON object: no characters before the opening { or after the closing }. Output must be instantly publication-ready (no post-processing needed).
+
+Forbidden: Any text, reasoning, or explanation before the opening {. Any text, summary, or "Done" after the closing }. Markdown code fences (```json or ```). The key private_key. Placeholder or empty values for required keys.
+
+Output valid JSON only; no trailing commas. Suggested key order: name, ticker, description, agent, useCases, tags, requirements, language, is_free.
+
+Required top-level keys (exactly these; no others):
+- name (string)
+- ticker (string, short uppercase)
+- description (string)
+- agent (string: full Python code; literal newlines in the string are fine)
+- useCases (array of {"title": string, "description": string}); at least 3 items
+- tags (string, comma-separated; no comma inside a tag)
+- requirements (array of {"package": string, "installation": string}); MUST include {"package": "swarms", "installation": "pip install swarms"}
+- language (string)
+- is_free (boolean true only)
+
+Do NOT include private_key. Do NOT wrap the output in ``` or any other formatting.
+'''.strip()
 from luaf_designer import parse_agent_payload as _parse_agent_payload_impl, retrieve_similar_exemplars
 DESIGNER_EXEMPLARS_PATH = _LUAF_DIR / 'designer_exemplars.jsonl'
 def parse_agent_payload(raw: str) -> dict[str, Any]:
@@ -203,28 +283,57 @@ def _generate_profile_from_keywords(keywords: str) -> Optional[dict[str, Any]]:
     """Call LLM to generate a profile (system_prompt, topic_prompt, product_focus) from keywords. In-memory only; follows same rules (plain text, no MD, backend monetization). Returns profile dict or None on failure."""
     keywords = (keywords or '').strip()[:500]
     if not keywords:
+        logger.debug('Profile from keywords: no keywords provided')
         return None
     api_key = os.environ.get('OPENAI_API_KEY', '').strip()
     base_url = (os.environ.get('OPENAI_BASE_URL') or 'https://api.openai.com/v1').strip()
     if not api_key:
         logger.warning('OPENAI_API_KEY not set; cannot generate profile from keywords.')
         return None
-    system = """You generate a LUAF designer profile from keywords. Output exactly three sections, using these headers alone on their own line:
+    logger.info('Generating profile from keywords: {}', keywords[:80] + ('…' if len(keywords) > 80 else ''))
+    system = """You generate a LUAF designer profile from keywords. Your response is parsed by splitting on exact header lines. Any deviation causes rejection.
+
+STRICT OUTPUT FORMAT (mandatory):
+- Your first line of the response MUST be exactly: ## SYSTEM_PROMPT
+- Then a blank line, then the full SYSTEM_PROMPT content (plain text only, 300+ lines).
+- Then exactly this line on its own: ## TOPIC_PROMPT
+- Then a blank line, then one paragraph for TOPIC_PROMPT (plain text).
+- Then exactly this line on its own: ## PRODUCT_FOCUS
+- Then a blank line, then one short paragraph for PRODUCT_FOCUS (plain text).
+- Nothing before the first ## SYSTEM_PROMPT. Nothing after the PRODUCT_FOCUS paragraph.
+
+Header lines must be exactly these, with no extra characters or spaces:
 ## SYSTEM_PROMPT
 ## TOPIC_PROMPT
 ## PRODUCT_FOCUS
 
-Rules: Plain text only in all sections. No Markdown (no bold, no ## inside content, no bullet lists). Revenue must be achievable without a customer-facing web app (API, data, automation, backend only). SYSTEM_PROMPT must be a full designer system prompt (same structure as LUAF: programming excellence, size 300+ lines, utility and monetization, product focus paragraph, output rules, process, agent architecture, code quality, listing metadata, JSON format). TOPIC_PROMPT is one paragraph to generate a single business idea. PRODUCT_FOCUS is one short paragraph for the designer user message. Output nothing before ## SYSTEM_PROMPT and nothing after the PRODUCT_FOCUS content."""
-    user = f"Generate a LUAF profile for these keywords: {keywords}"
+Content rules: Plain text only in all three sections. No Markdown inside content (no **, no ##, no bullet lists). No preamble, no "Here is...", no summary after PRODUCT_FOCUS. Revenue must be achievable without a customer-facing web app (API, data, automation, backend only). SYSTEM_PROMPT must be a complete designer system prompt: programming excellence, 300+ lines, utility and monetization, product focus, output rules, process, agent architecture, code quality, listing metadata. It MUST include a "JSON output format (mandatory for publication)" section that specifies: the designer's entire response must be a single JSON object; required top-level keys exactly name, ticker, description, agent, useCases, tags, requirements, language, is_free; agent = full Python code string; useCases = array of {title, description}; requirements = array of {package, installation} including swarms; is_free = boolean true only; no private_key; no markdown fences. TOPIC_PROMPT: one paragraph that generates a single business idea. PRODUCT_FOCUS: one short paragraph for the designer user message."""
+    user = f"Generate a LUAF profile for these keywords. Output only the three sections starting with ## SYSTEM_PROMPT as specified: {keywords}"
+    debug_path: Optional[Path] = None
     try:
-        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json={'model': LLM_MODEL, 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 'temperature': 0.7, 'max_tokens': 4096}, timeout=min(120, LLM_HTTP_TIMEOUT))
+        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json={'model': LLM_MODEL, 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 'temperature': 0.3, 'max_tokens': 8192}, timeout=min(120, LLM_HTTP_TIMEOUT))
         if not resp.ok:
-            logger.warning('LLM profile generation failed: {}', resp.status_code)
+            logger.warning('LLM profile generation failed: {} {}', resp.status_code, resp.text[:200])
             return None
         content = (resp.json().get('choices') or [{}])[0].get('message', {}).get('content') or ''
         if not content.strip():
+            logger.warning('LLM profile generation returned empty content')
             return None
-        parts = re.split(r'\n##\s+(SYSTEM_PROMPT|TOPIC_PROMPT|PRODUCT_FOCUS)\s*\n', content.strip(), flags=re.IGNORECASE)
+        logger.info('LLM profile response received, length={} chars', len(content))
+        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        safe_kw = re.sub(r'[^\w\-]', '_', keywords[:30]).strip('_') or 'keywords'
+        debug_path = PROFILES_DIR / f'generated_keywords_{safe_kw}_{ts}.txt'
+        try:
+            debug_path.write_text(content, encoding='utf-8')
+            logger.debug('Wrote LLM profile response to {}', debug_path)
+        except OSError as e:
+            logger.warning('Could not write profile debug file {}: {}', debug_path, e)
+        normalized = content.strip()
+        if normalized.startswith('##'):
+            normalized = '\n' + normalized
+        parts = re.split(r'\n##\s+(SYSTEM_PROMPT|TOPIC_PROMPT|PRODUCT_FOCUS)\s*\n', normalized, flags=re.IGNORECASE)
+        logger.debug('Profile parse: {} parts from header split', len(parts))
         result: dict[str, str] = {}
         i = 1
         while i + 1 < len(parts):
@@ -238,17 +347,25 @@ Rules: Plain text only in all sections. No Markdown (no bold, no ## inside conte
                 result['product_focus'] = body
             i += 2
         if not result.get('system_prompt'):
-            logger.warning('LLM profile response missing SYSTEM_PROMPT.')
+            logger.warning('LLM profile response missing SYSTEM_PROMPT (parse produced {} parts). Raw response saved to: {}', len(parts), debug_path)
+            if content.strip():
+                logger.debug('Response starts with: {}', repr(content.strip()[:300]))
             return None
+        system_prompt = result.get('system_prompt', '')
+        if PUBLICATION_OUTPUT_FORMAT_FRAGMENT not in system_prompt:
+            system_prompt = system_prompt + '\n\n' + PUBLICATION_OUTPUT_FORMAT_FRAGMENT
+        logger.info('Profile from keywords parsed successfully')
         return {
             'id': 'generated',
             'display_name': f'Generated: {keywords[:40]}{"…" if len(keywords) > 40 else ""}',
-            'system_prompt': result.get('system_prompt', ''),
+            'system_prompt': system_prompt,
             'topic_prompt': result.get('topic_prompt') or None,
             'product_focus': result.get('product_focus') or None,
         }
     except Exception as e:
         logger.warning('Generate profile from keywords failed: {}', e)
+        if debug_path:
+            logger.info('Check raw LLM output in {}', debug_path)
         return None
 
 
@@ -346,6 +463,15 @@ def _search_duckduckgo_cached(query: str, max_results: int) -> str:
 def search_duckduckgo(query: str, max_results: int=10) -> str:
     return _search_duckduckgo_cached((query or '').strip(), max_results)
 
+def _append_keyless_api_search(brief: str, snip: str) -> str:
+    """When LUAF_KEYLESS_API_SEARCH is enabled, append keyless/public API search results to snip."""
+    if not USE_KEYLESS_API_SEARCH or not (brief or '').strip():
+        return snip
+    extra = search_duckduckgo(f'{(brief or "").strip()} free public API no API key', max_results=DUCKDUCKGO_MAX_RESULTS)
+    if not (extra or '').strip():
+        return snip
+    return (snip or '') + '\n\nKeyless/public API options:\n' + extra
+
 def _search_duckduckgo_snippets_list(query: str, max_results: int) -> list[str]:
     try:
         from ddgs import DDGS
@@ -403,7 +529,7 @@ def _skeleton_validation_feedback(code: str) -> str | None:
         return 'Unit code contains stubs (NotImplementedError). Remove all stubs; provide a full implementation (at least 300 substantive lines, 400+ preferred).'
     n = _count_substantive_lines(code)
     if n < MIN_AGENT_LINES:
-        return f'Unit code has {n} substantive lines; minimum required is {MIN_AGENT_LINES} (400+ preferred). No stubs, boilerplate, or examples—only fully functioning runnable code.'
+        return f'Unit code has {n} substantive lines; minimum required is {MIN_AGENT_LINES} (400+ preferred). No stubs, boilerplate, examples, or mock data—only fully functioning runnable code.'
     return None
 
 def _ask_publish_without_validation() -> bool:
@@ -480,21 +606,38 @@ def run_agent_code_validation(agent_code: str, timeout: int) -> tuple[bool, str]
     max_import_retries = int(os.environ.get('LUAF_MAX_MISSING_IMPORT_RETRIES', '3'))
     last_fb = ''
     tried_install: set[str] = set()
+    _log_cap = int(os.environ.get('LUAF_VALIDATION_LOG_CAP', '2000'))
     try:
         for attempt in range(max_import_retries + 1):
+            logger.info('Validation run attempt {}: python {} (timeout={}s, cwd={})', attempt + 1, script_path, timeout, script_dir)
             try:
                 proc = subprocess.run([sys.executable, script_path], capture_output=True, timeout=timeout, cwd=script_dir, env=os.environ.copy())
             except subprocess.TimeoutExpired:
+                logger.warning('Validation timed out after {}s', timeout)
                 return (False, f'Validation failed: timed out after {timeout}s.')
             except Exception as e:
+                logger.warning('Validation subprocess error: {}', e)
                 return (False, f'Validation failed: {e!s}')
             out = (proc.stdout or b'').decode('utf-8', errors='replace').strip()
             err = (proc.stderr or b'').decode('utf-8', errors='replace').strip()
             last_fb = f"Validation failed (exit {proc.returncode}).\nStdout:\n{out or '(empty)'}\nStderr:\n{err or '(empty)'}"
+            logger.info('Validation exit code: {}', proc.returncode)
+            if out:
+                out_log = out if len(out) <= _log_cap else out[:_log_cap] + '\n... (truncated)'
+                logger.info('Validation stdout:\n{}', out_log)
+            else:
+                logger.info('Validation stdout: (empty)')
+            if err:
+                err_log = err if len(err) <= _log_cap else err[:_log_cap] + '\n... (truncated)'
+                logger.info('Validation stderr:\n{}', err_log)
+            else:
+                logger.info('Validation stderr: (empty)')
             if proc.returncode == 0:
+                logger.info('Validation passed.')
                 return (True, '')
             missing = _parse_missing_module(err)
             if not missing or attempt >= max_import_retries or missing in tried_install:
+                logger.warning('Validation failed (exit {}). See stdout/stderr above.', proc.returncode)
                 return (False, last_fb)
             logger.info("Validation failed with missing import '{}'; attempting pip install and retry.", missing)
             tried_install.add(missing)
@@ -508,6 +651,50 @@ def run_agent_code_validation(agent_code: str, timeout: int) -> tuple[bool, str]
             os.unlink(script_path)
         except OSError:
             pass
+
+def run_agent_in_new_terminal(script_path: Path | str, task: str, cwd: Optional[str] = None) -> None:
+    """Launch the agent script in a new terminal window so the user can observe it. Uses platform-appropriate commands."""
+    path = Path(script_path)
+    if not path.is_file():
+        logger.warning('Cannot run in new terminal: script not found at {}', path)
+        return
+    task_str = (task or '').strip() or 'Run a quick check.'
+    work_dir = cwd or str(path.parent)
+    try:
+        if sys.platform == 'win32':
+            # CREATE_NEW_CONSOLE opens a new console window; the window stays open so output is visible.
+            flags = subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0
+            subprocess.Popen(
+                [sys.executable, str(path), task_str],
+                cwd=work_dir,
+                env=os.environ.copy(),
+                creationflags=flags,
+            )
+            logger.info('Launched agent in new terminal: {}', path.name)
+        else:
+            # Unix: try gnome-terminal, then xterm, then fall back to a background Popen (no new window).
+            cmd = [sys.executable, str(path), task_str]
+            try:
+                subprocess.Popen(
+                    ['gnome-terminal', '--', sys.executable, str(path), task_str],
+                    cwd=work_dir,
+                    env=os.environ.copy(),
+                )
+                logger.info('Launched agent in new terminal (gnome-terminal): {}', path.name)
+            except FileNotFoundError:
+                try:
+                    import shlex
+                    subprocess.Popen(
+                        ['xterm', '-e', ' '.join(shlex.quote(str(x)) for x in cmd)],
+                        cwd=work_dir,
+                        env=os.environ.copy(),
+                    )
+                    logger.info('Launched agent in new terminal (xterm): {}', path.name)
+                except FileNotFoundError:
+                    subprocess.Popen(cmd, cwd=work_dir, env=os.environ.copy())
+                    logger.info('Launched agent in background (no terminal available): {}', path.name)
+    except Exception as e:
+        logger.warning('Failed to launch agent in new terminal: {}', e)
 
 def run_agent_once(agent_code: str, task: str, timeout: int=VALIDATION_TIMEOUT) -> tuple[bool, str]:
     if not (agent_code or '').strip():
@@ -568,18 +755,38 @@ def _run_swarms_agent(prompt: str, model: str, api_key: str, base_url: str, temp
     os.environ['OPENAI_BASE_URL'] = base_url
     return _str_from_result(SwarmsAgent(agent_name='LUAF Designer', agent_description='Designs tokenized agents.', model_name=model, max_loops=1, temperature=temperature).run(prompt))
 
+_TOPIC_GEN_SYSTEM = 'You output exactly one sentence: the business idea. No greeting, no preamble, no "Certainly", "Here is", "Sure", or any other conversational lead-in. No bullet points, no explanation, no outline. Reply with only that single sentence.'
+
+def _strip_topic_preamble(raw: str) -> str:
+    """Remove conversational preambles so only the one-sentence idea remains."""
+    s = (raw or '').strip()
+    if not s:
+        return s
+    s = re.sub(r'^(Certainly!?|Sure!?|Of course!?|Absolutely!?)\s*', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'^Here\'?s?\s+(?:a\s+)?(?:full\s+)?(?:brief\s+)?(?:outline\s+)?(?:for\s+)?', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'^Here\s+is\s+(?:a\s+)?(?:full\s+)?(?:outline\s+)?(?:for\s+)?', '', s, flags=re.IGNORECASE)
+    if '---' in s:
+        parts = s.split('---', 1)
+        if len(parts) > 1 and parts[1].strip():
+            s = parts[1].strip()
+    first_sentence = s.split('.')[0].strip()
+    if first_sentence and len(first_sentence) >= 20:
+        return (first_sentence + '.').strip()
+    return s.strip()[:500]
+
 def _generate_topic_via_llm(api_key: str, base_url: str, model: str=LLM_MODEL) -> str:
     if not (api_key or '').strip() or not (base_url or '').strip():
         return ''
     profile = get_active_profile()
     prompt = (profile.get('topic_prompt') or _DEFAULT_TOPIC_PROMPT).strip()
     try:
-        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json={'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 120, 'temperature': 0.8}, timeout=min(60, LLM_HTTP_TIMEOUT))
+        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json={'model': model, 'messages': [{'role': 'system', 'content': _TOPIC_GEN_SYSTEM}, {'role': 'user', 'content': prompt}], 'max_tokens': 120, 'temperature': 0.5}, timeout=min(60, LLM_HTTP_TIMEOUT))
         if not resp.ok:
             return ''
         data = resp.json()
         content = (data.get('choices') or [{}])[0].get('message', {}).get('content') or ''
-        return content.strip()[:500] or ''
+        content = _strip_topic_preamble(content)
+        return content[:500] or ''
     except Exception as e:
         logger.warning('Could not generate topic via LLM: {}', e)
         return ''
@@ -694,7 +901,7 @@ def _build_designer_user_message(topic: str, search_snippets: str, existing_name
     sections.append(f'\n## Design parameters\nSeed: {seed}. Angle: {angle}.')
     required_keys = ', '.join(sorted(REQUIRED_PAYLOAD_KEYS))
     product_focus = (product_focus_override or _DEFAULT_PRODUCT_FOCUS).strip()
-    sections.append(f"\n## Instructions\nFollow your process: Clarify → Architect → Implement → Describe. Write as an expert programmer: type hints, defensive code, real APIs, no dead code. The agent's task must be executable to generate profit or measurable value; design for real-world utility. {product_focus} Output ONLY the single JSON object. No other text, no reasoning, no markdown. Use the swarms Agent; no stubs or placeholders; full production-quality code. The agent code must be at least 300 substantive lines (400+ preferred); no boilerplate or examples—only fully functioning runnable code. The script is validated by running it with no arguments (python script.py). Make all CLI arguments optional (e.g. argparse: use default=, never required=True).\n**Required top-level keys (exactly these, no others): {required_keys}. agent = full Python code string; useCases = array of {{{{title, description}}}}; requirements = array of {{{{package, installation}}}}; is_free = true.")
+    sections.append(f"\n## Instructions\nFollow your process: Clarify → Architect → Implement → Describe. Write as an expert programmer: type hints, defensive code, real APIs, no dead code. Prefer external APIs that do not require API keys; when a key is required, use os.environ.get and add comments indicating where to obtain the key and where to set it (e.g. in .env). Do not use mock data, example data, or hardcoded fake responses; when real data requires credentials or external input, implement the real code path, read secrets from the environment, and add comments stating where to obtain and where to set each value (e.g. in .env). The agent's task must be executable to generate profit or measurable value; design for real-world utility. {product_focus} Output ONLY the single JSON object. No other text, no reasoning, no markdown. Use the swarms Agent; no stubs or placeholders; full production-quality code. The agent code must be at least 300 substantive lines (400+ preferred); no boilerplate or examples—only fully functioning runnable code. The script is validated by running it with no arguments (python script.py). Make all CLI arguments optional (e.g. argparse: use default=, never required=True).\n**Required top-level keys (exactly these, no others): {required_keys}. agent = full Python code string; useCases = array of {{{{title, description}}}}; requirements = array of {{{{package, installation}}}}; is_free = true.")
     if validation_feedback and validation_feedback.strip():
         sections.append('\n## Previous validation failure (fix before re-outputting)\nAddress every line of the validation error below. Fix all reported issues (imports, syntax, runtime). Then output only the corrected JSON object with no other text.\n\n' + validation_feedback.strip())
     if template:
@@ -713,6 +920,8 @@ def get_agent_payload_from_llm(topic: str, search_snippets: str, model: str, api
         if template:
             logger.info('Using template: {}', template_id)
     base_system = (system_prompt_override or get_active_profile().get('system_prompt') or DESIGNER_SYSTEM_PROMPT).strip()
+    if 'Required top-level keys' not in base_system or 'is_free (boolean true only)' not in base_system:
+        base_system = base_system + '\n\n' + PUBLICATION_OUTPUT_FORMAT_FRAGMENT
     system = base_system + '\n\nSWARMS REF:' + SWARMS_AGENT_DOCS
     if template and getattr(template, 'system_fragment', None):
         system += '\n\n' + (template.system_fragment or '')
@@ -1159,6 +1368,26 @@ def _run_evolution_standalone() -> None:
     except Exception as e:
         logger.warning('Evolution failed: {}', e)
 
+def _schedule_x_post_for_agent(payload: dict[str, Any], res: dict[str, Any]) -> None:
+    """If X post is enabled, add agent to pending and maybe post a batch. Best-effort; never raises."""
+    if _add_agent_to_x_pending is None or _maybe_post_x_batch is None or _is_x_post_enabled is None or not _is_x_post_enabled():
+        return
+    try:
+        _add_agent_to_x_pending(payload, res)
+        _maybe_post_x_batch()
+    except Exception as e:
+        logger.warning('X post scheduling failed: {}', e)
+
+def _drain_x_queue_if_enabled() -> None:
+    """Drain X post queue if the X layer is available and enabled. Best-effort; never raises."""
+    if _drain_x_queue is None or _is_x_post_enabled is None or not _is_x_post_enabled():
+        logger.debug('X queue drain skipped (disabled or module not loaded).')
+        return
+    try:
+        _drain_x_queue()
+    except Exception as e:
+        logger.warning('X queue drain failed: {}', e)
+
 def _run_social_standalone() -> None:
     if _run_social_autonomy is None:
         logger.error('OpenClaw not available.')
@@ -1283,6 +1512,7 @@ def run_persistent() -> None:
     used_t: set[str] = set()
     vfb: Optional[str] = None
     tmpl = (os.environ.get('LUAF_TEMPLATE') or '').strip() or None
+    _drain_x_queue_if_enabled()
     while True:
         if _tui_stop_requested:
             _tui_stopped_reason = 'stop'
@@ -1307,6 +1537,7 @@ def run_persistent() -> None:
                 snip = search_duckduckgo(f'{brief} {random.choice(SEARCH_VARIANT_SUFFIXES)}', max_results=DUCKDUCKGO_MAX_RESULTS)
         else:
             snip = search_duckduckgo(f'{brief} {random.choice(SEARCH_VARIANT_SUFFIXES)}', max_results=DUCKDUCKGO_MAX_RESULTS)
+        snip = _append_keyless_api_search(brief, snip)
         payload: Optional[dict[str, Any]] = None
         if USE_PLANNER and _plan_from_topic_and_search and _execute_plan and _get_template:
             try:
@@ -1360,7 +1591,7 @@ def run_persistent() -> None:
         if not ok:
             vfb = fb
             logger.warning('Unit validation failed: {}', fb[:1500])
-            logger.debug('Validation full feedback: {}', fb)
+            logger.info('Validation full feedback:\n{}', fb[:3000] + ('...' if len(fb) > 3000 else ''))
             if _ask_publish_without_validation():
                 logger.info('Publishing without validation (user confirmed).')
             else:
@@ -1383,11 +1614,16 @@ def run_persistent() -> None:
             logger.info('Run unit once: OK. Output length={}', len(run_out or ''))
         else:
             logger.warning('Run unit once: {}', run_out[:300] if run_out else 'failed')
+        if USE_RUN_IN_NEW_TERMINAL:
+            saved_path = _save_generated_agent(code, n, t, 0)
+            if saved_path:
+                run_agent_in_new_terminal(saved_path, (run_task or '').strip() or 'Run a quick check.')
         if res and (not dry_run_this):
             lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
             if lu or rid or ca:
                 published_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca, published_at=published_at)
+                _schedule_x_post_for_agent(payload, res)
                 _tui_session_published += 1
                 _tui_session_last_name = n or '—'
         run_delayed_claim_pass(AGENTS_REGISTRY_PATH, pkey or '', swarms_key, CLAIM_DELAY_HOURS)
@@ -1396,7 +1632,9 @@ def run_persistent() -> None:
 
 def run_standalone_cli() -> None:
     run_profile_selection()
-    _menu = '\n  ╭─────────────────────────────────────╮\n  │  LUAF  —  brief → research → launch  │\n  ╰─────────────────────────────────────╯\n    1. Pipeline   (design & launch autonomous unit)\n    2. Persistent (autonomous loop until target SOL)\n    0. Exit\n'
+    _title = _style_heading('LUAF  —  brief → research → launch')
+    _opts = _style_muted('    1. Pipeline   (design & launch autonomous unit)\n    2. Persistent (autonomous loop until target SOL)\n    0. Exit')
+    _menu = '\n  ╭─────────────────────────────────────╮\n  │  ' + _title + '  │\n  ╰─────────────────────────────────────╯\n' + _opts + '\n'
     _handlers: dict[str, Any] = {'1': main, '2': run_persistent, '0': None}
     while True:
         print(_menu)
@@ -1411,7 +1649,7 @@ def run_standalone_cli() -> None:
         if fn is not None:
             fn()
         else:
-            print('  Unknown. Use 1 (Pipeline), 2 (Autonomous loop), or 0 (Exit).')
+            print(_style_warn('  Unknown. Use 1 (Pipeline), 2 (Autonomous loop), or 0 (Exit).'))
 
 def run_interactive_menu() -> None:
     if create_luaf_app:
@@ -1483,6 +1721,7 @@ def main() -> None:
                 snip = search_duckduckgo(f'{brief} {random.choice(SEARCH_VARIANT_SUFFIXES)}', max_results=DUCKDUCKGO_MAX_RESULTS)
         else:
             snip = search_duckduckgo(f'{brief} {random.choice(SEARCH_VARIANT_SUFFIXES)}', max_results=DUCKDUCKGO_MAX_RESULTS)
+        snip = _append_keyless_api_search(brief, snip)
         payload = None
         if USE_PLANNER and _plan_from_topic_and_search and _execute_plan and _get_template:
             try:
@@ -1537,46 +1776,65 @@ def main() -> None:
             vfb = sk_fb
             logger.warning('Unit code too short or skeleton (step {}): {}', step, sk_fb[:200])
             continue
-        _save_generated_agent(code, payload.get('name'), payload.get('ticker'), step)
+        saved_path = _save_generated_agent(code, payload.get('name'), payload.get('ticker'), step)
         ok, fb = run_agent_code_validation(code, VALIDATION_TIMEOUT)
         if ok:
-            logger.info('Validation OK (step {}). Publishing.', step)
+            logger.info('Validation OK (step {}). Publishing to marketplace (dry_run={}).', step, DRY_RUN)
             n, t = ((payload.get('name') or '').strip(), (payload.get('ticker') or '').strip())
             used_n.add(n.lower())
             used_t.add(t.upper())
             res = publish_agent(payload, swarms_key, pkey or '', DRY_RUN, creator_wallet=cwallet)
+            logger.info('Publish returned; updating registry and X only if not dry run.')
             if res and (not DRY_RUN):
                 lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
                 if lu or rid or ca:
                     append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca)
+                    _schedule_x_post_for_agent(payload, res)
+            if USE_RUN_IN_NEW_TERMINAL and saved_path:
+                run_agent_in_new_terminal(saved_path, (brief or '').strip() or 'Run a quick check.')
             break
         vfb = fb
         logger.warning('Unit validation failed (step {}): {}', step, fb[:1500])
-        logger.debug('Validation full feedback (step {}): {}', step, fb)
+        logger.info('Validation full feedback (step {}):\n{}', step, fb[:3000] + ('...' if len(fb) > 3000 else ''))
         if _ask_publish_without_validation():
-            logger.info('Publishing without validation (user confirmed).')
+            logger.info('Publishing without validation (user confirmed). dry_run={}', DRY_RUN)
             n, t = ((payload.get('name') or '').strip(), (payload.get('ticker') or '').strip())
             used_n.add(n.lower())
             used_t.add(t.upper())
             res = publish_agent(payload, swarms_key, pkey or '', DRY_RUN, creator_wallet=cwallet)
+            logger.info('Publish returned.')
             if res and (not DRY_RUN):
                 lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
                 if lu or rid or ca:
                     append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca)
+                    _schedule_x_post_for_agent(payload, res)
+            if USE_RUN_IN_NEW_TERMINAL and saved_path:
+                run_agent_in_new_terminal(saved_path, (brief or '').strip() or 'Run a quick check.')
             break
     else:
         logger.warning('Max steps ({}) reached.', MAX_STEPS)
-    if CLAIM_FEES_AFTER_RUN and (pkey or '').strip():
-        for e in _load_agents_registry(AGENTS_REGISTRY_PATH):
-            ca = e.get('token_address') or e.get('ca')
-            if not ca or len(ca) < 32:
-                continue
-            logger.info('Claiming fees for {}', ca[:16])
-            cr = claim_fees(ca, pkey.strip(), api_key=swarms_key)
-            if cr and cr.get('success'):
-                logger.info('Claimed: sig={} sol={}', cr.get('signature'), cr.get('amountClaimedSol'))
-            elif cr:
-                logger.warning('Claim: {}', cr)
+    if CLAIM_FEES_AFTER_RUN and (pkey or '').strip() and not DRY_RUN:
+        reg = _load_agents_registry(AGENTS_REGISTRY_PATH)
+        claimable = [e for e in reg if (e.get('token_address') or e.get('ca')) and len((e.get('token_address') or e.get('ca') or '')) >= 32]
+        if claimable:
+            logger.info('Claiming fees for {} agent(s)...', len(claimable))
+            for e in claimable:
+                ca = e.get('token_address') or e.get('ca')
+                if not ca or len(ca) < 32:
+                    continue
+                logger.info('Claiming fees for {}', ca[:16])
+                cr = claim_fees(ca, pkey.strip(), api_key=swarms_key)
+                if cr and cr.get('success'):
+                    logger.info('Claimed: sig={} sol={}', cr.get('signature'), cr.get('amountClaimedSol'))
+                elif cr:
+                    logger.warning('Claim: {}', cr)
+        else:
+            logger.debug('No claimable agents in registry.')
+    else:
+        if DRY_RUN and CLAIM_FEES_AFTER_RUN:
+            logger.debug('Skipping claim fees (dry run).')
+    logger.info('Draining X queue (if enabled)...')
+    _drain_x_queue_if_enabled()
     logger.info('Done.')
     if _luaf_should_evolve():
         try:
@@ -1599,43 +1857,289 @@ def main() -> None:
         except Exception:
             pass
 
+# Init wizard hints (where to get keys). Design spec: tui.css / plan.
+_INIT_REQUIRED_KEYS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'SWARMS_API_KEY', 'SOLANA_PUBKEY')
+_INIT_OPTIONAL_KEYS = ('SOLANA_PRIVATE_KEY', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET')
+_INIT_HINTS: dict[str, str] = {
+    'OPENAI_API_KEY': 'Create at https://platform.openai.com/api-keys (API keys → Create new secret key)',
+    'OPENAI_BASE_URL': 'Default: https://api.openai.com/v1 — change only if using a proxy or compatible endpoint',
+    'SWARMS_API_KEY': 'Get from https://swarms.world (Swarms dashboard / sign-up)',
+    'SOLANA_PUBKEY': 'Your Solana wallet public key (base58). From Phantom/Solflare or: solana address',
+    'SOLANA_PRIVATE_KEY': 'Base58 secret key or path in SOLANA_PRIVATE_KEY_FILE; needed for publishing. Export from wallet or generate with Solana CLI',
+    'X_API_KEY': 'X (Twitter) app API key: https://developer.x.com — Project → App → Keys and tokens',
+    'X_API_SECRET': 'X app API secret (same app)',
+    'X_ACCESS_TOKEN': 'X OAuth 1.0a access token (user context)',
+    'X_ACCESS_SECRET': 'X OAuth 1.0a access token secret',
+}
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """Read .env-style file into key -> value. Comments and empty lines omitted."""
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' in line:
+            k, _, v = line.partition('=')
+            k = k.strip()
+            if k:
+                v = v.strip().strip('"').strip("'")
+                out[k] = v
+    return out
+
+def _write_env_updates(path: Path, updates: dict[str, str], template_lines: list[str]) -> None:
+    """Write .env file: apply updates to keys that appear in template_lines, else append."""
+    existing = _parse_env_file(path)
+    existing.update(updates)
+    seen: set[str] = set()
+    result: list[str] = []
+    for line in template_lines:
+        stripped = line.strip()
+        if stripped and '=' in stripped and not stripped.startswith('#'):
+            k = stripped.partition('=')[0].strip()
+            if k in existing:
+                seen.add(k)
+                result.append(f'{k}={existing[k]}')
+                continue
+        result.append(line.rstrip())
+    for k, v in existing.items():
+        if k not in seen:
+            result.append(f'{k}={v}')
+    path.write_text('\n'.join(result) + '\n', encoding='utf-8')
+
+def run_init(init_args: Any) -> int:
+    """Create or update .env; interactive prompts with hints. Returns exit code (0 = success)."""
+    from_example = getattr(init_args, 'from_example', False)
+    force = getattr(init_args, 'force', False)
+    check = getattr(init_args, 'check', False)
+    env_path = _REPO_ROOT / '.env'
+    example_path = _REPO_ROOT / '.env.example'
+    if not example_path.exists():
+        example_path = _LUAF_DIR / '.env.example'
+    if check:
+        load_dotenv(env_path)
+        load_dotenv(Path.cwd() / '.env')
+        missing = [k for k in _INIT_REQUIRED_KEYS if not (os.environ.get(k) or '').strip()]
+        if not missing:
+            print(_style_success('All required env vars are set.'))
+            return 0
+        print(_style_error('Missing required env vars: ') + ', '.join(missing))
+        return 1
+    template_lines: list[str] = []
+    if example_path.exists():
+        template_lines = example_path.read_text(encoding='utf-8', errors='replace').splitlines()
+    else:
+        template_lines = [
+            '# LUAF — copy to .env and fill in. Do not commit .env (secrets).',
+            '',
+            '# Required for trend → spec → agent pipeline',
+            'OPENAI_API_KEY=sk-proj-your-openai-key-here',
+            'OPENAI_BASE_URL=https://api.openai.com/v1',
+            'SWARMS_API_KEY=sk-your-swarms-api-key-here',
+            'SOLANA_PUBKEY=YourSolanaWalletPublicKeyBase58',
+            '',
+        ]
+    if not env_path.exists():
+        env_path.write_text('\n'.join(template_lines) + '\n', encoding='utf-8')
+        print(_style_success(f'Created .env at {env_path}'))
+    else:
+        if from_example:
+            return 0
+        print(_style_muted(f'.env exists at {env_path}'))
+    current = _parse_env_file(env_path)
+    is_tty = getattr(sys.stdin, 'isatty', lambda: False)()
+    if not is_tty or from_example:
+        return 0
+    getpass = __import__('getpass', fromlist=['getpass']).getpass
+    updates: dict[str, str] = {}
+    for key in _INIT_REQUIRED_KEYS:
+        existing = (current.get(key) or '').strip()
+        if existing and not force:
+            continue
+        hint = _INIT_HINTS.get(key, '')
+        print(_style_heading(f'  {key}'))
+        if hint:
+            print(_style_muted(f'    {hint}'))
+        if key in ('OPENAI_API_KEY', 'SWARMS_API_KEY'):
+            val = getpass(f'    Value (or Enter to skip): ').strip()
+        else:
+            try:
+                val = input(f'    Value (or Enter to skip): ').strip()
+            except (EOFError, KeyboardInterrupt):
+                val = ''
+        if val:
+            updates[key] = val
+    if updates:
+        _write_env_updates(env_path, updates, template_lines)
+        print(_style_success('Updated .env with provided values.'))
+    if is_tty and not from_example:
+        try:
+            opt = input(_style_heading('\n  Set up optional keys (Solana private key, X posting)? [y/N]: ')).strip().lower()
+            if opt in ('y', 'yes'):
+                print(_style_muted('  Optional keys — press Enter to skip any.\n'))
+                for key in _INIT_OPTIONAL_KEYS:
+                    existing = (current.get(key) or updates.get(key) or '').strip()
+                    if existing and not force:
+                        continue
+                    hint = _INIT_HINTS.get(key, '')
+                    print(_style_heading(f'  {key}'))
+                    if hint:
+                        print(_style_muted(f'    {hint}'))
+                    if key in ('SOLANA_PRIVATE_KEY', 'X_API_SECRET', 'X_ACCESS_SECRET'):
+                        val = getpass(f'    Value (or Enter to skip): ').strip()
+                    else:
+                        try:
+                            val = input(f'    Value (or Enter to skip): ').strip()
+                        except (EOFError, KeyboardInterrupt):
+                            val = ''
+                    if val:
+                        updates[key] = val
+                if updates:
+                    current = _parse_env_file(env_path)
+                    current.update(updates)
+                    _write_env_updates(env_path, current, template_lines)
+                    print(_style_success('  Optional keys saved.'))
+        except (EOFError, KeyboardInterrupt):
+            pass
+        print(_style_heading('\n  Next steps:'))
+        print(_style_muted('    luaf doctor   — check config and connectivity'))
+        print(_style_muted('    luaf run     — run a single pipeline'))
+        print(_style_muted('    luaf persistent — autonomous loop until target SOL'))
+    return 0
+
+def run_doctor(doctor_args: Any) -> int:
+    """Check .env, required vars, optional vars, and basic connectivity. Returns 0 if required OK, 1 otherwise."""
+    load_dotenv(_REPO_ROOT / '.env')
+    load_dotenv(Path.cwd() / '.env')
+    env_path = _REPO_ROOT / '.env'
+    issues: list[str] = []
+    ok_items: list[str] = []
+    if not env_path.exists():
+        issues.append('.env not found (run: luaf init)')
+    else:
+        ok_items.append('.env exists')
+    for k in _INIT_REQUIRED_KEYS:
+        v = (os.environ.get(k) or '').strip()
+        if not v:
+            issues.append(f'Missing required: {k}')
+        else:
+            ok_items.append(f'{k} set')
+    x_keys = ('X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET')
+    x_set = sum(1 for k in x_keys if (os.environ.get(k) or '').strip())
+    if x_set > 0 and x_set < 4:
+        issues.append('X posting: set all four X_* vars or leave all unset')
+    elif x_set == 4:
+        ok_items.append('X posting credentials set')
+    if (os.environ.get('SOLANA_PRIVATE_KEY') or '').strip() or (os.environ.get('SOLANA_PRIVATE_KEY_FILE') or '').strip():
+        ok_items.append('Solana private key configured (publish enabled)')
+    else:
+        ok_items.append('Solana private key not set (publish will be dry-run only)')
+    for s in ok_items:
+        print(_style_success('  ✓ ') + s)
+    for s in issues:
+        print(_style_error('  ✗ ') + s)
+    if issues:
+        bal = None
+        try:
+            pubkey = get_creator_pubkey()
+            if pubkey:
+                bal = get_solana_balance(pubkey, SOLANA_RPC_URL)
+                print(_style_info(f'  Solana balance: {bal:.4f} SOL') + ' (at ' + (pubkey[:8] + '...') + ')')
+        except Exception:
+            pass
+        print(_style_warn('\n  Fix missing vars with: luaf init'))
+        return 1
+    try:
+        pubkey = get_creator_pubkey()
+        if pubkey:
+            bal = get_solana_balance(pubkey, SOLANA_RPC_URL)
+            print(_style_success(f'  Solana balance: {bal:.4f} SOL'))
+    except Exception as e:
+        print(_style_warn(f'  Solana check: {e}'))
+    print(_style_success('\n  Doctor: required config OK.'))
+    return 0
+
+def _build_parser() -> Any:
+    import argparse
+    p = argparse.ArgumentParser(description='LUAF: brief -> research -> build -> validate -> launch autonomous business units.', formatter_class=argparse.RawDescriptionHelpFormatter, epilog='\nExamples:\n  luaf                 CLI menu (default; use --tui for experimental TUI)\n  luaf init            Setup wizard: .env and API keys\n  luaf init --check    Verify required env vars\n  luaf doctor          Check config and connectivity\n  luaf run             Single pipeline\n  luaf persistent      Autonomous loop until target SOL\n  luaf help            Show this help\n')
+    p.add_argument('--no-tui', '-n', action='store_true', help='Use CLI menu only (default)')
+    p.add_argument('--tui', action='store_true', help='Use TUI (experimental); default is CLI')
+    p.add_argument('--no-color', action='store_true', help='Disable ANSI colors (also NO_COLOR=1)')
+    p.add_argument('--once', '-o', action='store_true', help='Run single pipeline (same as run)')
+    p.add_argument('--persistent', '-p', action='store_true', help='Run autonomous loop until target SOL')
+    p.add_argument('--self-train', metavar='TOPIC', nargs='?', const='', default=None, help='Run self-train pipeline; TOPIC optional')
+    sub = p.add_subparsers(dest='command', help='Command')
+    init_p = sub.add_parser('init', help='Setup wizard: create .env and prompt for API keys')
+    init_p.add_argument('--from-example', action='store_true', help='Non-interactive: only ensure .env exists from template')
+    init_p.add_argument('--force', action='store_true', help='Allow overwriting existing keys when re-prompting')
+    init_p.add_argument('--check', action='store_true', help='Validate required env vars are set; exit 0/1')
+    sub.add_parser('run', help='Run single pipeline and exit')
+    sub.add_parser('persistent', help='Run autonomous loop until target SOL')
+    st = sub.add_parser('self-train', help='Run self-train pipeline')
+    st.add_argument('topic', nargs='?', default='', help='Topic (default from env/TOPIC)')
+    sub.add_parser('doctor', help='Check config, env vars, and connectivity')
+    sub.add_parser('help', help='Show help and exit')
+    return p
+
 def _parse_cli() -> Any:
     import argparse
-    p = argparse.ArgumentParser(description='LUAF: brief → research → build → validate → launch autonomous business units.', formatter_class=argparse.RawDescriptionHelpFormatter, epilog='\nExamples:\n  LUAF.py              Interactive menu (TUI if available)\n  LUAF.py --no-tui     CLI menu only, no TUI\n  LUAF.py --once       Run single pipeline and exit (no autonomous loop)\n  LUAF.py --persistent Run autonomous loop until target SOL\n  LUAF.py run          Same as --once (legacy)\n  LUAF.py --self-train [TOPIC]  Self-train pipeline\n')
-    p.add_argument('--no-tui', '-n', action='store_true', help='Disable TUI; use CLI menu only')
-    p.add_argument('--once', '-o', action='store_true', help='Run single pipeline and exit (do not run autonomously)')
-    p.add_argument('--persistent', '-p', action='store_true', help='Run autonomous loop until target SOL')
-    p.add_argument('--self-train', metavar='TOPIC', nargs='?', const='', default=None, help='Run self-train pipeline; TOPIC optional (default from env/TOPIC)')
-    p.add_argument('run_or_persistent', nargs='?', choices=['run', 'persistent'], help="Legacy: 'run' = single pipeline, 'persistent' = autonomous loop")
-    args, rest = p.parse_known_args()
-    pos = getattr(args, 'run_or_persistent', None)
-    if pos == 'run':
-        args.once = True
-    if pos == 'persistent':
-        args.persistent = True
+    set_cli_no_color((os.environ.get('NO_COLOR') or '').strip() != '')
+    p = _build_parser()
+    args = p.parse_args()
+    if getattr(args, 'no_color', False):
+        set_cli_no_color(True)
+    if getattr(args, 'once', False):
+        args.command = 'run'
+    if getattr(args, 'persistent', False):
+        args.command = 'persistent'
+    if args.self_train is not None:
+        args.command = 'self-train'
+        if not hasattr(args, 'topic'):
+            args.topic = args.self_train if args.self_train else ''
     for a in sys.argv[1:]:
         a = a.strip().lower()
         if a == 'run':
-            args.once = True
+            args.command = 'run'
             break
         if a in ('persistent', '--persistent'):
-            args.persistent = True
+            args.command = 'persistent'
             break
-    if os.environ.get('LUAF_MODE', '').strip().lower() == 'persistent' and (not (args.once or args.self_train is not None)):
-        args.persistent = True
+    if os.environ.get('LUAF_MODE', '').strip().lower() == 'persistent' and (not args.command or args.command not in ('run', 'self-train')):
+        args.command = 'persistent'
+    if not getattr(args, 'command', None) and (getattr(args, 'once', False) or getattr(args, 'persistent', False)):
+        args.command = 'persistent' if getattr(args, 'persistent', False) else 'run'
     return args
-if __name__ == '__main__':
+
+def run_cli() -> None:
+    """Entry point for the `luaf` console script. Parses CLI and dispatches to init, run, persistent, or interactive menu."""
     args = _parse_cli()
-    if args.self_train is not None:
-        topic = (args.self_train if args.self_train else TOPIC).strip()[:500] or TOPIC
+    cmd = getattr(args, 'command', None)
+    if cmd == 'init':
+        sys.exit(run_init(args))
+    if cmd == 'self-train':
+        topic = (getattr(args, 'topic', '') or TOPIC).strip()[:500] or TOPIC
         sys.exit(0 if _luaf_run_self_train(topic) else 1)
-    if args.persistent:
+    if cmd == 'persistent':
         run_profile_selection()
         run_persistent()
-    elif args.once:
+    elif cmd == 'run':
         run_profile_selection()
         main()
-    elif args.no_tui:
-        run_standalone_cli()
-    else:
+    elif cmd == 'doctor':
+        sys.exit(run_doctor(args))
+    elif cmd == 'help':
+        _build_parser().print_help()
+        sys.exit(0)
+    elif cmd is not None:
+        print(_style_error(f'Unknown command: {cmd}'))
+        sys.exit(1)
+    elif getattr(args, 'tui', False):
         run_interactive_menu()
+    else:
+        run_standalone_cli()
+
+
+if __name__ == '__main__':
+    run_cli()

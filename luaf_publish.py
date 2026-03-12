@@ -173,9 +173,10 @@ def publish_agent(payload: dict[str, Any], api_key: str, private_key: str, dry_r
         for k in ('ticker', 'creator_wallet', 'private_key'):
             out.pop(k, None)
     if dry_run:
-        logger.info('Dry run: tokenized_on=False')
+        logger.info('Dry run: tokenized_on=False (still listing on marketplace)')
     if image_url:
         out['image_url'] = image_url
+    logger.info('Posting agent to marketplace ({})...', _BASE_URL)
     try:
         resp = requests.post(f"{_BASE_URL.rstrip('/')}/api/add-agent", headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}, json=out, timeout=_HTTP_PUBLISH_TIMEOUT)
         status_code, data = (resp.status_code, _resp_json(resp))
@@ -185,5 +186,5 @@ def publish_agent(payload: dict[str, Any], api_key: str, private_key: str, dry_r
     if status_code >= 400:
         logger.error('Publish failed: {} {}', status_code, data)
         return data
-    logger.info('Success: {} id={} ca={}', data.get('listing_url'), data.get('id'), data.get('token_address', 'N/A'))
+    logger.info('Publish success: id={} listing_url={} ca={}', data.get('id'), data.get('listing_url'), data.get('token_address', 'N/A'))
     return data

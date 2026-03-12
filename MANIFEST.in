@@ -1,0 +1,25 @@
+# Include docs and license for sdist (PyPI)
+include README.md
+include LICENSE
+include pyproject.toml
+
+# Include config/data files needed at runtime (relative to installed modules)
+include designer_system_prompt.txt
+include luaf_quality.json
+include .env.example
+
+# Optional: include empty or example data so install works
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .env
+global-exclude *.log
+global-exclude .git
+global-exclude .gitignore
+
+# Exclude generated and dev-only content from sdist
+prune generated_agents
+prune katoolin
+prune logs
+prune agent_workspace
+prune profiles
+prune .cursor

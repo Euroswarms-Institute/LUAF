@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "luaf"
+version = "0.1.0"
+description = "Brief → research → build → validate → launch autonomous tokenized business units (Swarms, Solana)"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "LUAF contributors" }
+]
+keywords = [
+    "agents",
+    "swarms",
+    "solana",
+    "tokenization",
+    "autonomous",
+    "llm",
+    "ai",
+    "deploy",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "requests>=2.28.0",
+    "requests_oauthlib>=1.3.0",
+    "python-dotenv>=1.0.0",
+    "loguru>=0.7.0",
+    "ddgs>=9.0.0",
+]
+
+[project.optional-dependencies]
+tui = [
+    "rich>=13.0.0",
+]
+rag = [
+    "sentence-transformers>=2.2.0",
+]
+designer = [
+    "swarms",
+]
+planner = [
+    "pyclips @ git+https://github.com/kyordhel/pyclips3.git@master",
+    "planner",
+    "executor",
+    "toolbox",
+]
+all = [
+    "luaf[tui,rag,designer]",
+    "tinydb",
+]
+
+[project.scripts]
+luaf = "LUAF:run_cli"
+
+[project.urls]
+Homepage = "https://github.com/Euroswarms-Institute/LUAF"
+Repository = "https://github.com/Euroswarms-Institute/LUAF"
+Documentation = "https://github.com/Euroswarms-Institute/LUAF#readme"
+"Bug Tracker" = "https://github.com/Euroswarms-Institute/LUAF/issues"
+
+[tool.setuptools]
+py-modules = ["LUAF", "luaf_publish", "luaf_designer", "luaf_x_post", "luaf_profiles", "luaf_tui"]
