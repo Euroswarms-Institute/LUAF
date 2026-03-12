@@ -54,8 +54,8 @@ rag = [
 designer = [
     "swarms",
 ]
+# PyPI does not allow git URL deps. For pyclips3: pip install "pyclips @ git+https://github.com/kyordhel/pyclips3.git@master"
 planner = [
-    "pyclips @ git+https://github.com/kyordhel/pyclips3.git@master",
     "planner",
     "executor",
     "toolbox",
