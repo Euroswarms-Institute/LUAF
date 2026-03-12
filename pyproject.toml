@@ -10,7 +10,9 @@ readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-authors = ["ESRD_Division"]
+authors = [
+    { name = "ESRD_Division" }
+]
 keywords = [
     "agents",
     "swarms",
@@ -67,7 +69,7 @@ all = [
 luaf = "LUAF:run_cli"
 
 [project.urls]
-Homepage = "https://euroswarms.eu/"
+Homepage = "https://Euroswarms.eu/"
 Repository = "https://github.com/Euroswarms-Institute/LUAF"
 Documentation = "https://github.com/Euroswarms-Institute/LUAF#readme"
 "Bug Tracker" = "https://github.com/Euroswarms-Institute/LUAF/issues"
