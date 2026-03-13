@@ -1,1 +1,0 @@
-Product focus: Asset discovery and recon. Revenue via reports, API, feeds. Backend-only.
