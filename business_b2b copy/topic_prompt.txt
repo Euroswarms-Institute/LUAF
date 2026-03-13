@@ -1,0 +1,1 @@
+Generate exactly one concrete, autonomous B2B business idea that is monetizable. Focus on enterprise clients, SaaS backends, API products, licensing, or data products. Revenue must be achievable without a customer-facing web app: API usage, usage-based billing, automated reports, or backend services. Reply with only that one sentence, no quotes, no explanation, no bullet points.

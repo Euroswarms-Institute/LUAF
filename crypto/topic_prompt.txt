@@ -1,0 +1,1 @@
+Generate exactly one concrete, autonomous business idea that is monetizable and tokenizable. It must make money without a frontend: e.g. API usage, token fees, data/arbitrage/sellable output, automated backends—no subscription sites, dashboards, or SaaS UIs. Reply with only that one sentence, no quotes, no explanation, no bullet points.

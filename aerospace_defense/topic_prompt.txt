@@ -1,0 +1,1 @@
+Generate exactly one concrete, autonomous business idea that is monetizable and centered on aerospace, defense, simulation, telemetry, or procurement. Revenue via API or contracting—no customer-facing web app. Reply with only that one sentence, no quotes, no explanation, no bullet points.
