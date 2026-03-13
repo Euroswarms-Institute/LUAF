@@ -248,10 +248,14 @@ def parse_agent_payload(raw: str) -> dict[str, Any]:
     return _parse_agent_payload_impl(raw, REQUIRED_PAYLOAD_KEYS)
 def _retrieve_similar_exemplars(topic: str, search_snippets: str, top_k: int = 3) -> list[str]:
     return retrieve_similar_exemplars(topic, search_snippets, DESIGNER_EXEMPLARS_PATH, top_k)
-_designer_prompt_path = _LUAF_DIR / 'designer_system_prompt.txt'
-DESIGNER_SYSTEM_PROMPT = _designer_prompt_path.read_text(encoding='utf-8') if _designer_prompt_path.exists() else ''
-if not DESIGNER_SYSTEM_PROMPT.strip():
-    logger.warning('designer_system_prompt.txt not found next to LUAF.py; designer may not behave as expected')
+# Lookup: cwd first (PyPI users), then package dir. If neither exists, use embedded default.
+_designer_prompt_candidates: list[Path] = [Path.cwd() / 'designer_system_prompt.txt', _LUAF_DIR / 'designer_system_prompt.txt']
+_designer_prompt_path: Path = next((p for p in _designer_prompt_candidates if p.exists()), _LUAF_DIR / 'designer_system_prompt.txt')
+if _designer_prompt_path.exists():
+    DESIGNER_SYSTEM_PROMPT = _designer_prompt_path.read_text(encoding='utf-8')
+else:
+    from luaf_defaults import DEFAULT_DESIGNER_SYSTEM_PROMPT as DESIGNER_SYSTEM_PROMPT
+    logger.warning('designer_system_prompt.txt not found in current directory; run "luaf init" to create one.')
 PROFILES_DIR = _LUAF_DIR / 'profiles'
 _DEFAULT_TOPIC_PROMPT = 'Generate exactly one concrete, autonomous business idea that is monetizable and tokenizable. It must make money without a frontend: e.g. API usage, token fees, data/arbitrage/sellable output, automated backends—no subscription sites, dashboards, or SaaS UIs. Reply with only that one sentence, no quotes, no explanation, no bullet points.'
 _DEFAULT_PRODUCT_FOCUS = 'Product focus: Tokenized units only; revenue via API usage, token fees, data/arbitrage/sellable output—not via products that need a web frontend (no subscription UI, dashboard, or SaaS customer-facing app).'
@@ -260,14 +264,15 @@ _active_profile: Optional[dict[str, Any]] = None
 
 def _get_default_profile() -> dict[str, Any]:
     """Return the default profile (current designer_system_prompt.txt + default topic/focus)."""
-    if _get_default_profile_impl is None:
-        return {
-            'id': 'default',
-            'display_name': 'default',
-            'system_prompt': DESIGNER_SYSTEM_PROMPT,
-            'topic_prompt': _DEFAULT_TOPIC_PROMPT,
-            'product_focus': _DEFAULT_PRODUCT_FOCUS,
-        }
+    base = {
+        'id': 'default',
+        'display_name': 'default',
+        'system_prompt': DESIGNER_SYSTEM_PROMPT,
+        'topic_prompt': _DEFAULT_TOPIC_PROMPT,
+        'product_focus': _DEFAULT_PRODUCT_FOCUS,
+    }
+    if _get_default_profile_impl is None or not _designer_prompt_path.exists():
+        return base
     return _get_default_profile_impl(_designer_prompt_path, _DEFAULT_TOPIC_PROMPT, _DEFAULT_PRODUCT_FOCUS)
 
 
@@ -1860,6 +1865,12 @@ def main() -> None:
 # Init wizard hints (where to get keys). Design spec: tui.css / plan.
 _INIT_REQUIRED_KEYS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'SWARMS_API_KEY', 'SOLANA_PUBKEY')
 _INIT_OPTIONAL_KEYS = ('SOLANA_PRIVATE_KEY', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET')
+# Values that count as "not set" (template placeholders). Doctor and init --check treat these as missing.
+_INIT_PLACEHOLDER_VALUES: frozenset[str] = frozenset({
+    'yoursolanawalletpublickeybase58', 'sk-proj-your-openai-key-here', 'sk-your-swarms-api-key-here',
+})
+def _is_placeholder_value(val: str) -> bool:
+    return (val or '').strip().lower() in _INIT_PLACEHOLDER_VALUES
 _INIT_HINTS: dict[str, str] = {
     'OPENAI_API_KEY': 'Create at https://platform.openai.com/api-keys (API keys → Create new secret key)',
     'OPENAI_BASE_URL': 'Default: https://api.openai.com/v1 — change only if using a proxy or compatible endpoint',
@@ -1909,19 +1920,34 @@ def _write_env_updates(path: Path, updates: dict[str, str], template_lines: list
             result.append(f'{k}={v}')
     path.write_text('\n'.join(result) + '\n', encoding='utf-8')
 
+def _ensure_designer_prompt_in_cwd() -> None:
+    """Create designer_system_prompt.txt in cwd if missing (PyPI users have no repo file)."""
+    prompt_path = Path.cwd() / 'designer_system_prompt.txt'
+    if prompt_path.exists():
+        return
+    try:
+        from luaf_defaults import DEFAULT_DESIGNER_SYSTEM_PROMPT as _default_prompt
+        prompt_path.write_text(_default_prompt, encoding='utf-8')
+        print(_style_success('  Created designer_system_prompt.txt in current directory.'))
+    except Exception as e:
+        logger.warning('Could not create designer_system_prompt.txt: {}', e)
+
 def run_init(init_args: Any) -> int:
     """Create or update .env; interactive prompts with hints. Returns exit code (0 = success)."""
     from_example = getattr(init_args, 'from_example', False)
     force = getattr(init_args, 'force', False)
     check = getattr(init_args, 'check', False)
-    env_path = _REPO_ROOT / '.env'
-    example_path = _REPO_ROOT / '.env.example'
+    # PyPI users: .env lives in cwd. Repo users: cwd or repo root.
+    env_path = Path.cwd() / '.env'
+    example_path = Path.cwd() / '.env.example'
+    if not example_path.exists():
+        example_path = _REPO_ROOT / '.env.example'
     if not example_path.exists():
         example_path = _LUAF_DIR / '.env.example'
     if check:
-        load_dotenv(env_path)
         load_dotenv(Path.cwd() / '.env')
-        missing = [k for k in _INIT_REQUIRED_KEYS if not (os.environ.get(k) or '').strip()]
+        load_dotenv(_REPO_ROOT / '.env')
+        missing = [k for k in _INIT_REQUIRED_KEYS if not (os.environ.get(k) or '').strip() or _is_placeholder_value(os.environ.get(k) or '')]
         if not missing:
             print(_style_success('All required env vars are set.'))
             return 0
@@ -1951,6 +1977,7 @@ def run_init(init_args: Any) -> int:
     current = _parse_env_file(env_path)
     is_tty = getattr(sys.stdin, 'isatty', lambda: False)()
     if not is_tty or from_example:
+        _ensure_designer_prompt_in_cwd()
         return 0
     getpass = __import__('getpass', fromlist=['getpass']).getpass
     updates: dict[str, str] = {}
@@ -2003,48 +2030,177 @@ def run_init(init_args: Any) -> int:
                     print(_style_success('  Optional keys saved.'))
         except (EOFError, KeyboardInterrupt):
             pass
+        _ensure_designer_prompt_in_cwd()
         print(_style_heading('\n  Next steps:'))
         print(_style_muted('    luaf doctor   — check config and connectivity'))
         print(_style_muted('    luaf run     — run a single pipeline'))
         print(_style_muted('    luaf persistent — autonomous loop until target SOL'))
     return 0
 
+def _env_path_for_user() -> Path:
+    """Where .env is expected: cwd first (PyPI users), then repo/package root."""
+    cwd_env = Path.cwd() / '.env'
+    if cwd_env.exists():
+        return cwd_env
+    return _REPO_ROOT / '.env'
+
+def _doctor_check_openai() -> tuple[bool, Optional[str]]:
+    """Health check: call OpenAI-compatible API. Returns (ok, error_message)."""
+    api_key = (os.environ.get('OPENAI_API_KEY') or '').strip()
+    base_url = (os.environ.get('OPENAI_BASE_URL') or 'https://api.openai.com/v1').strip()
+    if not api_key:
+        return False, 'not set'
+    try:
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        resp = requests.post(
+            url,
+            headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+            json={'model': 'gpt-4o-mini', 'messages': [{'role': 'user', 'content': 'Hi'}], 'max_tokens': 5},
+            timeout=15,
+        )
+        if resp.ok:
+            return True, None
+        err = _resp_json(resp)
+        code = resp.status_code
+        msg = (err.get('error', {}) or err) if isinstance(err.get('error'), dict) else err
+        detail = (msg.get('message') or msg.get('error') or resp.text[:200] or str(code)).strip()
+        return False, f'{code} {detail}' if detail else str(code)
+    except requests.exceptions.RequestException as e:
+        return False, f'{getattr(e.response, "status_code", None) or "network"} {str(e)[:80]}'
+
+def _doctor_check_swarms() -> tuple[bool, Optional[str]]:
+    """Health check: call Swarms API with Bearer. 401/403 = bad auth; 200/400/422 = auth OK."""
+    api_key = (os.environ.get('SWARMS_API_KEY') or '').strip()
+    base_url = (os.environ.get('LUAF_SWARMS_BASE_URL') or 'https://swarms.world').strip()
+    if not api_key:
+        return False, 'not set'
+    try:
+        url = f"{base_url.rstrip('/')}/api/add-agent"
+        resp = requests.post(
+            url,
+            headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+            json={},
+            timeout=15,
+        )
+        if resp.status_code in (401, 403):
+            return False, f'{resp.status_code} Unauthorized/Forbidden'
+        if resp.status_code in (200, 400, 422):
+            return True, None
+        return False, f'{resp.status_code} {resp.text[:80] or "error"}'
+    except requests.exceptions.RequestException as e:
+        return False, f'{getattr(e.response, "status_code", None) or "network"} {str(e)[:80]}'
+
+def _doctor_check_solana() -> tuple[bool, Optional[str]]:
+    """Health check: Solana RPC getBalance. Returns (ok, error_message)."""
+    pubkey = get_creator_pubkey()
+    if not pubkey or _is_placeholder_value(pubkey):
+        return False, 'not set or placeholder'
+    try:
+        resp = requests.post(
+            SOLANA_RPC_URL,
+            json={'jsonrpc': '2.0', 'id': 1, 'method': 'getBalance', 'params': [pubkey]},
+            timeout=10,
+        )
+        if not resp.ok:
+            return False, f'{resp.status_code} {resp.text[:80] or "RPC error"}'
+        data = resp.json()
+        err = data.get('error')
+        if err is not None:
+            code = err.get('code', '') if isinstance(err, dict) else ''
+            msg = err.get('message', str(err))[:80] if isinstance(err, dict) else str(err)[:80]
+            return False, f'{code} {msg}'.strip()
+        return True, None
+    except requests.exceptions.RequestException as e:
+        return False, f'{getattr(e.response, "status_code", None) or "network"} {str(e)[:80]}'
+
+def _doctor_check_x() -> tuple[bool, Optional[str]]:
+    """Health check: X API 2 users/me with OAuth 1.0a. Returns (ok, error_message)."""
+    try:
+        from requests_oauthlib import OAuth1Session
+    except ImportError:
+        return False, 'requests_oauthlib not installed'
+    key = (os.environ.get('X_API_KEY') or '').strip()
+    secret = (os.environ.get('X_API_SECRET') or '').strip()
+    token = (os.environ.get('X_ACCESS_TOKEN') or '').strip()
+    token_secret = (os.environ.get('X_ACCESS_SECRET') or '').strip()
+    if not all((key, secret, token, token_secret)):
+        return False, 'not set'
+    try:
+        oauth = OAuth1Session(key, secret, token, token_secret)
+        resp = oauth.get('https://api.twitter.com/2/users/me', timeout=10)
+        if resp.ok:
+            return True, None
+        err = resp.text[:100] if resp.text else str(resp.status_code)
+        return False, f'{resp.status_code} {err}'
+    except requests.exceptions.RequestException as e:
+        return False, f'{getattr(e.response, "status_code", None) or "network"} {str(e)[:80]}'
+
 def run_doctor(doctor_args: Any) -> int:
-    """Check .env, required vars, optional vars, and basic connectivity. Returns 0 if required OK, 1 otherwise."""
+    """Check .env, required vars, and live API health. Returns 0 if required OK, 1 otherwise."""
     load_dotenv(_REPO_ROOT / '.env')
     load_dotenv(Path.cwd() / '.env')
-    env_path = _REPO_ROOT / '.env'
-    issues: list[str] = []
-    ok_items: list[str] = []
+    env_path = _env_path_for_user()
+    has_issues = False
     if not env_path.exists():
-        issues.append('.env not found (run: luaf init)')
+        print(_style_error('  ✗ ') + '.env not found (run: luaf init)')
+        has_issues = True
     else:
-        ok_items.append('.env exists')
+        print(_style_success('  ✓ ') + '.env exists')
+
     for k in _INIT_REQUIRED_KEYS:
         v = (os.environ.get(k) or '').strip()
-        if not v:
-            issues.append(f'Missing required: {k}')
+        if not v or _is_placeholder_value(v):
+            print(_style_error('  ✗ ') + f'{k} (missing or placeholder)')
+            has_issues = True
+            continue
+        if k == 'OPENAI_API_KEY':
+            ok, err = _doctor_check_openai()
+            if ok:
+                print(_style_success('  ✓ ') + 'OPENAI_API_KEY (health check OK)')
+            else:
+                print(_style_error('  ✗ ') + f'OPENAI_API_KEY ({err})')
+                has_issues = True
+        elif k == 'OPENAI_BASE_URL':
+            continue
+        elif k == 'SWARMS_API_KEY':
+            ok, err = _doctor_check_swarms()
+            if ok:
+                print(_style_success('  ✓ ') + 'SWARMS_API_KEY (health check OK)')
+            else:
+                print(_style_error('  ✗ ') + f'SWARMS_API_KEY ({err})')
+                has_issues = True
+        elif k == 'SOLANA_PUBKEY':
+            ok, err = _doctor_check_solana()
+            if ok:
+                print(_style_success('  ✓ ') + 'SOLANA_PUBKEY (health check OK)')
+            else:
+                print(_style_error('  ✗ ') + f'SOLANA_PUBKEY ({err})')
+                has_issues = True
         else:
-            ok_items.append(f'{k} set')
+            print(_style_success('  ✓ ') + f'{k} set')
+
     x_keys = ('X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET')
     x_set = sum(1 for k in x_keys if (os.environ.get(k) or '').strip())
     if x_set > 0 and x_set < 4:
-        issues.append('X posting: set all four X_* vars or leave all unset')
+        print(_style_error('  ✗ ') + 'X posting: set all four X_* vars or leave all unset')
+        has_issues = True
     elif x_set == 4:
-        ok_items.append('X posting credentials set')
+        ok, err = _doctor_check_x()
+        if ok:
+            print(_style_success('  ✓ ') + 'X posting (health check OK)')
+        else:
+            print(_style_error('  ✗ ') + f'X posting ({err})')
+            has_issues = True
+
     if (os.environ.get('SOLANA_PRIVATE_KEY') or '').strip() or (os.environ.get('SOLANA_PRIVATE_KEY_FILE') or '').strip():
-        ok_items.append('Solana private key configured (publish enabled)')
+        print(_style_success('  ✓ ') + 'Solana private key configured (publish enabled)')
     else:
-        ok_items.append('Solana private key not set (publish will be dry-run only)')
-    for s in ok_items:
-        print(_style_success('  ✓ ') + s)
-    for s in issues:
-        print(_style_error('  ✗ ') + s)
-    if issues:
-        bal = None
+        print(_style_muted('  · ') + 'Solana private key not set (publish will be dry-run only)')
+
+    if has_issues:
         try:
             pubkey = get_creator_pubkey()
-            if pubkey:
+            if pubkey and not _is_placeholder_value(pubkey):
                 bal = get_solana_balance(pubkey, SOLANA_RPC_URL)
                 print(_style_info(f'  Solana balance: {bal:.4f} SOL') + ' (at ' + (pubkey[:8] + '...') + ')')
         except Exception:
@@ -2053,11 +2209,11 @@ def run_doctor(doctor_args: Any) -> int:
         return 1
     try:
         pubkey = get_creator_pubkey()
-        if pubkey:
+        if pubkey and not _is_placeholder_value(pubkey):
             bal = get_solana_balance(pubkey, SOLANA_RPC_URL)
             print(_style_success(f'  Solana balance: {bal:.4f} SOL'))
     except Exception as e:
-        print(_style_warn(f'  Solana check: {e}'))
+        print(_style_warn(f'  Solana balance check: {e}'))
     print(_style_success('\n  Doctor: required config OK.'))
     return 0
 

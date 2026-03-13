@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "luaf"
-version = "1.2.0"
+version = "0.1.0"
 description = "Brief → research → build → validate → launch autonomous tokenized business units (Swarms, Solana)"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
@@ -75,4 +75,4 @@ Documentation = "https://github.com/Euroswarms-Institute/LUAF#readme"
 "Bug Tracker" = "https://github.com/Euroswarms-Institute/LUAF/issues"
 
 [tool.setuptools]
-py-modules = ["LUAF", "luaf_publish", "luaf_designer", "luaf_x_post", "luaf_profiles", "luaf_tui"]
+py-modules = ["LUAF", "luaf_publish", "luaf_designer", "luaf_x_post", "luaf_profiles", "luaf_tui", "luaf_defaults"]
