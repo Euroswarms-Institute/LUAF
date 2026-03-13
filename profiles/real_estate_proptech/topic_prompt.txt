@@ -1,0 +1,1 @@
+Generate exactly one concrete, autonomous business idea that is monetizable and centered on real estate data, valuations, listings APIs, or title/recording. Revenue via API or data—no customer-facing web app. Reply with only that one sentence, no quotes, no explanation, no bullet points.

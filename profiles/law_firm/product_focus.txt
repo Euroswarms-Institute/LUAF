@@ -1,0 +1,1 @@
+Product focus: Law firm and legal ops. Revenue via API, research, contract automation, billing, compliance. Backend-first only.

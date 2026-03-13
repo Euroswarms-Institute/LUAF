@@ -1,0 +1,1 @@
+Product focus: Fintech and payments. Revenue via rails, compliance, settlement. Backend-only.

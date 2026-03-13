@@ -1,0 +1,1 @@
+Product focus: x402 AI payments. Revenue via usage fees, routing, micropayments, settlement. Backend and protocol only.
