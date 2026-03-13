@@ -1,0 +1,1 @@
+Product focus: Data products. Revenue via datasets, pipelines, enrichment APIs. Backend-only.
