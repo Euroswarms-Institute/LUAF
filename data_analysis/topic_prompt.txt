@@ -1,1 +1,0 @@
-Generate exactly one concrete, autonomous business idea that is monetizable and centered on data analysis, analytics, or data products. Focus on pipelines, reporting, metrics, backtesting, or sellable data outputs. Revenue via API, data feeds, or automated analysis—no customer-facing web app required. Reply with only that one sentence, no quotes, no explanation, no bullet points.
