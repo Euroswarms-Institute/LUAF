@@ -262,7 +262,7 @@ else:
 def _resolve_profiles_dir() -> Path:
     """Profiles dir for reading: package when installed, else repo profiles."""
     try:
-        ref = importlib.resources.files("luaf_profiles_data") / "profiles"
+        ref = importlib.resources.files("profiles")
         p = Path(str(ref))
         if p.is_dir():
             return p
@@ -1728,7 +1728,10 @@ def run_interactive_menu() -> None:
             if 0 <= idx < len(profile_options_list):
                 _active_profile = profile_options_list[idx]
                 logger.info('Profile: {}', _active_profile.get('display_name', _active_profile.get('id', 'default')))
-        config: dict[str, Any] = {'get_creator_pubkey': get_creator_pubkey, 'get_solana_balance': get_solana_balance, 'load_agents_registry': lambda: _load_agents_registry(AGENTS_REGISTRY_PATH), 'target_sol': _env_float('LUAF_PERSISTENT_TARGET_SOL', 10.0, 0.0, 1000000.0), 'registry_path': AGENTS_REGISTRY_PATH, 'rpc_url': SOLANA_RPC_URL, 'set_stop_requested': _set_stop, 'get_tui_state': _get_state, 'log_queue': _log_queue, 'profile_options': profile_options_list, 'on_profile_selected': _on_profile_selected}
+        def _get_profile_display_name() -> str:
+            p = get_active_profile()
+            return (p or {}).get('display_name', (p or {}).get('id', 'default'))
+        config: dict[str, Any] = {'get_creator_pubkey': get_creator_pubkey, 'get_solana_balance': get_solana_balance, 'load_agents_registry': lambda: _load_agents_registry(AGENTS_REGISTRY_PATH), 'target_sol': _env_float('LUAF_PERSISTENT_TARGET_SOL', 10.0, 0.0, 1000000.0), 'registry_path': AGENTS_REGISTRY_PATH, 'rpc_url': SOLANA_RPC_URL, 'set_stop_requested': _set_stop, 'get_tui_state': _get_state, 'log_queue': _log_queue, 'profile_options': profile_options_list, 'on_profile_selected': _on_profile_selected, 'get_current_profile_display_name': _get_profile_display_name}
         LUAFApp = create_luaf_app(run_persistent, config)
         app = LUAFApp()
         app.run()
