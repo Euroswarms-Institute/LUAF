@@ -8,6 +8,10 @@ include designer_system_prompt.txt
 include luaf_quality.json
 include .env.example
 
+# Include LUAF profiles package (shipped with pip)
+include profiles/__init__.py
+recursive-include profiles *.txt
+
 # Optional: include empty or example data so install works
 global-exclude __pycache__
 global-exclude *.py[cod]
@@ -21,5 +25,4 @@ prune generated_agents
 prune katoolin
 prune logs
 prune agent_workspace
-prune profiles
 prune .cursor
