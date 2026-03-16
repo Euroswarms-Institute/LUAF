@@ -1,6 +1,6 @@
 # LUAF — Large-scale Unified Agent Foundry
 
-**One script. Brief → research → build → validate → launch.**  
+**One CLI. Brief → research → build → validate → launch.**  
 Turn a business idea (or a blank line for AI-generated alpha) into a **tokenized autonomous unit** on [swarms.world](https://swarms.world), with optional Solana tokenization.
 
 - **Repo:** [Euroswarms-Institute/LUAF](https://github.com/Euroswarms-Institute/LUAF)
@@ -10,13 +10,13 @@ Turn a business idea (or a blank line for AI-generated alpha) into a **tokenized
 
 ## What it actually does
 
-`LUAF.py` is a single entrypoint that:
+The **`luaf`** CLI (single entrypoint) runs a pipeline that:
 
-1. **Takes a brief** — You type a use case, or leave it blank and let the LLM cook.
+1. **Takes a brief** — You type a use case (or set `LUAF_TOPIC` / `--topic`), or leave it blank and let the LLM generate one.
 2. **Researches** — DuckDuckGo (and optionally multi-hop RAG) for real-world context; search is biased toward **keyless/public APIs** when possible.
 3. **Builds** — Optional planner (templates) + designer LLM (swarms/ReAct or direct chat) to generate a full agent spec. The designer **prefers APIs that do not require API keys**; when keys are needed, generated code uses `os.environ.get` and comments on where to get/set them. **No mock or example data** — real code paths and inline comments for where to plug in credentials or data.
 4. **Validates** — Runs the generated Python in a subprocess; auto `pip install` on `ModuleNotFoundError` (with retries); min ~300 substantive lines, no stubs.
-5. **Launches** — `POST https://swarms.world/api/add-agent`; optional Solana tokenization. After publish, the agent can be **run in a new terminal window** (so you can watch it) via `LUAF_RUN_IN_NEW_TERMINAL=1` (default). Optional X (Twitter) batch posting via `luaf_x_post` when `LUAF_POST_TO_X=1` and X API credentials are set.
+5. **Launches** — `POST https://swarms.world/api/add-agent`; optional Solana tokenization. You can attach an **agent image** via `LUAF_AGENT_IMAGE_URL`, or use **keyless AI image generation** (`LUAF_GENERATE_AGENT_IMAGE=1` or `--generate-agent-image`) to create one from name/description (Pollinations.ai, no API key). After publish, the agent can be **run in a new terminal window** via `LUAF_RUN_IN_NEW_TERMINAL=1` (default). Optional X (Twitter) batch posting via `luaf_x_post` when `LUAF_POST_TO_X=1` and X API credentials are set.
 
 So: **one command, one brief, one unit on-chain** (if you turn off dry-run and have keys).
 
@@ -38,18 +38,16 @@ luaf persistent   # loop until target SOL
 
 ```bash
 pip install -r requirements.txt   # or: pip install -e .
-export OPENAI_API_KEY=sk-...
-export SWARMS_API_KEY=...         # optional if LUAF_DRY_RUN=1 (default)
-
-luaf init      # or: python LUAF.py init
-luaf run       # or: python LUAF.py run
-luaf persistent   # or: python LUAF.py persistent
+luaf init      # create .env from env.example and set API keys
+luaf doctor    # check config and connectivity
+luaf run       # single pipeline
+luaf persistent   # loop until target SOL
 ```
 
-**Other commands:** `luaf init --check`, `luaf init --from-example`, `luaf self-train [TOPIC]`, `luaf --no-tui`, `luaf --tui` (experimental TUI).
+**Other commands:** `luaf init --check`, `luaf init --from-example`, `luaf self-train [TOPIC]`, `luaf --no-tui`, `luaf --tui` (experimental TUI). All config can be overridden via **CLI flags** (see [CLI config flags](#cli-config-flags)); flags take precedence over `.env`.
 
-- **Dry run (default):** `LUAF_DRY_RUN=1` → no real POST to add-agent, no SOL spent.  
-- **Real publish:** `LUAF_DRY_RUN=0` + `SWARMS_API_KEY` (+ `SOLANA_PRIVATE_KEY` for tokenization).  
+- **Dry run (default):** `LUAF_DRY_RUN=1` or `luaf run --dry-run` → no real POST to add-agent, no SOL spent.  
+- **Real publish:** `luaf run --no-dry-run` (or `LUAF_DRY_RUN=0`) + `SWARMS_API_KEY` (+ `SOLANA_PRIVATE_KEY` for tokenization).  
 - **Persistent mode:** Generates topics (single/env/file), runs pipeline per topic, publishes until balance ≥ target SOL or you stop (TUI: `s` stop, `q` quit).
 
 ---
@@ -63,7 +61,7 @@ luaf persistent   # or: python LUAF.py persistent
   `search_duckduckgo(brief + random SEARCH_VARIANT_SUFFIX)` or, if `LUAF_USE_MULTIHOP_WEB_RAG=1`, `_multihop_web_rag()` (embedding-guided hops, converge threshold, dedup).
 
 - **Planner (optional)**  
-  If `LUAF_USE_PLANNER=1` and `planner`/`executor`/`toolbox` are importable: `plan_from_topic_and_search(brief, snippets)` → `execute_plan(plan, get_template, required_payload_keys)`. If the result is a skeleton (<300 lines / `NotImplementedError`), LUAF can hand off to the designer.
+  If `LUAF_USE_PLANNER=1` and `planner`/`executor`/`toolbox` are importable: `plan_from_topic_and_search(brief, snippets)` → `execute_plan(plan, get_template, required_payload_keys)`. If the result is a skeleton (<300 lines / `NotImplementedError`), LUAF can hand off to the designer. For pyclips support, install separately: `pip install "pyclips @ git+https://github.com/kyordhel/pyclips3.git@master"` (PyPI does not allow git URL deps in published metadata).
 
 - **Designer (optional)**  
   If `LUAF_USE_DESIGNER=1`: builds a system prompt from `designer_system_prompt.txt` + `SWARMS_AGENT_DOCS` + quality packages for the topic (`luaf_quality.json`); can use Swarms Agent, ReAct, or direct OpenAI-compatible `/chat/completions`. Subprocess designer is default (`LUAF_DESIGNER_SUBPROCESS=1`); writes `final_agent_payload.json` into workspace. Exemplar retrieval (optional) from `designer_exemplars.jsonl` via `luaf_designer.retrieve_similar_exemplars`.
@@ -93,10 +91,10 @@ luaf persistent   # or: python LUAF.py persistent
 |------------|----------|
 | `luaf` | CLI menu (default). |
 | `luaf --tui` | Use experimental TUI (Rich). |
-| `luaf init` | **Setup wizard:** create/update `.env`, prompt for required keys (OpenAI, Swarms, Solana pubkey), then optionally for Solana private key and X (Twitter) posting keys. Prints next steps (doctor, run, persistent). |
-| `luaf init --from-example` | Non-interactive: ensure `.env` exists from `.env.example` only. |
+| `luaf init` | **Setup:** create/update `.env` from `env.example` (or bundled template when pip-installed). Prompts for API keys (OpenAI, Swarms, Solana, X); Enter to skip any. Edit `.env` for other `LUAF_*` options. |
+| `luaf init --from-example` | Non-interactive: ensure `.env` exists from template only. |
 | `luaf init --check` | Verify required env vars; exit 0 if OK, 1 if missing. |
-| `luaf doctor` | Check `.env` existence, required/optional vars, X credentials consistency, Solana balance when possible. Exit 0/1. |
+| `luaf doctor` | Load `.env`, check required vars and live API health. Keys set in `.env` (manually or via init) are validated the same. Exit 0/1. |
 | `luaf help` | Show help (same as `luaf -h`). |
 | `luaf run` | Single pipeline then exit (same as `--once`). |
 | `luaf persistent` | Run persistent loop until target SOL or stop. |
@@ -108,9 +106,35 @@ luaf persistent   # or: python LUAF.py persistent
 
 If `LUAF_MODE=persistent` and you don’t pass `run` or `self-train`, `persistent` is used.
 
+### CLI config flags
+
+Override `.env` when passed. Apply to `luaf run` and `luaf persistent`.
+
+| Flag | Env | Description |
+|------|-----|-------------|
+| `--dry-run` / `--no-dry-run` | `LUAF_DRY_RUN` | Publish as dry-run only vs real. |
+| `--target-sol N` | `LUAF_PERSISTENT_TARGET_SOL` | Stop persistent when balance ≥ N SOL. |
+| `--topic TEXT` | `LUAF_TOPIC` | Brief / topic for this run. |
+| `--generate-agent-image` / `--no-generate-agent-image` | `LUAF_GENERATE_AGENT_IMAGE` | Keyless AI image (Pollinations.ai). |
+| `--agent-image-url URL` | `LUAF_AGENT_IMAGE_URL` | Fixed image URL for published agents. |
+| `--claim-delay-hours H` | `LUAF_CLAIM_DELAY_HOURS` | Hours after publish before claiming fees. |
+| `--min-sol-to-tokenize N` | `LUAF_MIN_SOL_TO_TOKENIZE` | Below this balance, dry-run only. |
+| `--max-steps N` | `LUAF_MAX_STEPS` | Max pipeline retry steps per run. |
+| `--interactive` / `--no-interactive` | `LUAF_INTERACTIVE` | Prompt for brief/name/ticker. |
+| `--run-in-new-terminal` / `--no-run-in-new-terminal` | `LUAF_RUN_IN_NEW_TERMINAL` | Launch agent in new terminal after publish. |
+| `--validation-timeout SEC` | `LUAF_VALIDATION_TIMEOUT` | Agent validation subprocess timeout. |
+| `--loop-sleep-seconds SEC` | `LUAF_PERSISTENT_LOOP_SLEEP_SECONDS` | Sleep between persistent iterations. |
+| `--topic-file PATH` | `LUAF_TOPIC_FILE` | Persistent: one topic per line. |
+| `--topic-list LIST` | `LUAF_TOPIC_LIST` | Persistent: comma-separated topics. |
+| `--topic-source single\|env\|file` | `LUAF_PERSISTENT_TOPIC_SOURCE` | Persistent: topic source. |
+
+Examples: `luaf run --no-dry-run --topic "DeFi feed" --generate-agent-image` · `luaf persistent --target-sol 20 --claim-delay-hours 0.25` · `luaf persistent --topic-file ./topics.txt --topic-source file`
+
 ---
 
-## Environment variables (LUAF.py only)
+## Environment variables
+
+Loaded from **cwd first**, then repo root (so your `.env` wins). Can be overridden by [CLI config flags](#cli-config-flags).
 
 **Required for core run**
 
@@ -172,6 +196,12 @@ If `LUAF_MODE=persistent` and you don’t pass `run` or `self-train`, `persisten
 - `LUAF_RUN_IN_NEW_TERMINAL` — `1` (default): after publish, launch the agent in a new terminal window for observation. `0`: skip.
 - `LUAF_KEYLESS_API_SEARCH` — `1` (default): append keyless/public-API-focused search snippets for the designer.
 
+**Agent image (for publish)**
+
+- `LUAF_GENERATE_AGENT_IMAGE` — `1`: generate a keyless AI image from agent name/description (Pollinations.ai, no API key). `0` (default): no auto image.
+- `LUAF_AGENT_IMAGE_URL` — Fixed image URL for all published agents (overrides payload and keyless).
+- `LUAF_AGENT_IMAGE_BASE_URL` — Override keyless image base (default `https://gen.pollinations.ai`).
+
 **X (Twitter) posting** (optional; requires `luaf_x_post.py`)
 
 - `LUAF_POST_TO_X` — `1` to enable batched 2-tweet threads for published agents.
@@ -199,7 +229,7 @@ If `LUAF_MODE=persistent` and you don’t pass `run` or `self-train`, `persisten
 - **`designer_system_prompt.txt`** — Full designer system prompt (keyless-API preference, no mocks, comment-based data placement). If missing, designer behavior may be wrong.
 - **`luaf_quality.json`** — Optional. `design_angles`, `search_variant_suffixes`, `quality_packages_by_category`, `quality_category_keywords`. Fallback used if missing.
 - **`designer_exemplars.jsonl`** — Optional. One JSON object per line for retrieval.
-- **`.env`** — Loaded from repo root and cwd. Use **`.env.example`** as template; `luaf init` creates/updates `.env` with hints.
+- **`.env`** — Loaded from **cwd first**, then repo root (your `.env` wins). Use **`env.example`** or **`.env.example`** as template; `luaf init` creates/updates `.env` from it (or uses a bundled template when installed via pip). Edit `.env` for all `LUAF_*` options.
 
 **Outputs**
 
@@ -222,16 +252,16 @@ If `LUAF_MODE=persistent` and you don’t pass `run` or `self-train`, `persisten
 ## Degen cheat sheet
 
 - **“First time setup”**  
-  `luaf init` (wizard for .env + keys), then `luaf doctor` to verify. Run from repo or `pip install luaf` / `pip install -e .`.
+  `luaf init` (creates `.env` from template, prompts for API keys), then `luaf doctor` to verify. Works from repo or `pip install luaf`.
 
 - **“I just want one unit live”**  
-  `luaf init` then `OPENAI_API_KEY` + `SWARMS_API_KEY` + `LUAF_DRY_RUN=0`; run `luaf run`, enter brief (or Enter for AI idea). Optionally `SOLANA_PRIVATE_KEY` + `CREATOR_WALLET` for tokenization. After publish, the agent opens in a new terminal by default (`LUAF_RUN_IN_NEW_TERMINAL=1`).
+  Set keys in `.env` (or use `luaf init`), then `luaf run --no-dry-run --topic "Your brief"` (or enter brief at prompt). Add `--generate-agent-image` for a keyless agent image. Optionally `SOLANA_PRIVATE_KEY` + `CREATOR_WALLET` in `.env` for tokenization.
 
 - **“I want it to run until I’m at 10 SOL”**  
-  `LUAF_PERSISTENT_TARGET_SOL=10` (default), set keys, run `luaf persistent`. With TUI (`luaf --tui` then 2): `s` stop, `q` quit.
+  `luaf persistent --target-sol 10` (or default). With TUI (`luaf --tui` then 2): `s` stop, `q` quit.
 
 - **“I want 50 different topics from a file”**  
-  `LUAF_TOPIC_FILE=/path/to/topics.txt`, `LUAF_PERSISTENT_TOPIC_SOURCE=file`, `luaf persistent`.
+  `luaf persistent --topic-file ./topics.txt --topic-source file`.
 
 - **“Validation keeps failing”**  
   Check `logs/luaf.log`. LUAF auto-installs missing deps and retries. If it’s stubs/short code, add more context to the brief. You can answer “y” to “Publish without validation?” (TTY only).
@@ -240,14 +270,14 @@ If `LUAF_MODE=persistent` and you don’t pass `run` or `self-train`, `persisten
   Default. Use `luaf` (no `--tui`). Menu: 1 = pipeline, 2 = persistent, 0 = exit.
 
 - **“Dry run forever”**  
-  Default. Set `LUAF_DRY_RUN=0` only when you’re ready for real listing and (optionally) SOL.
+  Default. Use `luaf run --no-dry-run` or `LUAF_DRY_RUN=0` only when you’re ready for real listing and (optionally) SOL.
 
 ---
 
 ## Summary
 
-**LUAF** = one entrypoint: **brief → research → build → validate → launch**.  
-Install: `pip install luaf` or clone + `pip install -e .`. Commands: **`luaf init`** (setup wizard), **`luaf doctor`** (check config), **`luaf run`**, **`luaf persistent`**, **`luaf help`**. Default UI is the CLI menu; use **`luaf --tui`** for the experimental TUI.  
-Designer prefers **keyless APIs** and **no mock data**; when credentials are needed, generated code uses env and comments for where to get/set them. After publish, agents can be **launched in a new terminal** (`LUAF_RUN_IN_NEW_TERMINAL=1`). Optional **X (Twitter)** batch posting via `luaf_x_post` when configured.  
+**LUAF** = one CLI: **brief → research → build → validate → launch**.  
+Install: `pip install luaf` or clone + `pip install -e .`. Commands: **`luaf init`** (setup .env and API keys), **`luaf doctor`** (check config), **`luaf run`**, **`luaf persistent`**, **`luaf help`**. All config is overridable via **CLI flags** (e.g. `--dry-run`, `--target-sol`, `--topic`, `--generate-agent-image`). Default UI is the CLI menu; use **`luaf --tui`** for the experimental TUI.  
+Designer prefers **keyless APIs** and **no mock data**; when credentials are needed, generated code uses env and comments for where to get/set them. You can add a **keyless agent image** per publish (`LUAF_GENERATE_AGENT_IMAGE=1` or `--generate-agent-image`, Pollinations.ai). After publish, agents can be **launched in a new terminal** (`LUAF_RUN_IN_NEW_TERMINAL=1`). Optional **X (Twitter)** batch posting via `luaf_x_post` when configured.  
 Requires **`luaf_publish.py`** and **`luaf_designer.py`** for full flow; **`luaf_tui.py`** and **`luaf_x_post.py`** are optional.  
 Publish endpoint: **`POST https://swarms.world/api/add-agent`**.
