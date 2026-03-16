@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "luaf"
-version = "1.3.2"
+version = "1.3.3"
 description = "Brief → research → build → validate → launch autonomous tokenized business units (Swarms, Solana)"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
@@ -76,3 +76,7 @@ Documentation = "https://github.com/Euroswarms-Institute/LUAF#readme"
 
 [tool.setuptools]
 py-modules = ["LUAF", "luaf_publish", "luaf_designer", "luaf_x_post", "luaf_profiles", "luaf_tui", "luaf_defaults"]
+packages = ["profiles"]
+
+[tool.setuptools.package-data]
+"profiles" = ["**/*.txt"]
