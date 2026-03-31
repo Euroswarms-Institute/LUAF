@@ -1,0 +1,9 @@
+build/
+dist/
+*.egg-info/
+.eggs/
+__pycache__/
+*.py[cod]
+*.whl
+_wdist*/
+_wdist2*/

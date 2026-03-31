@@ -60,8 +60,12 @@ planner = [
     "executor",
     "toolbox",
 ]
+rapid = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+]
 all = [
-    "luaf[tui,rag,designer]",
+    "luaf[tui,rag,designer,rapid]",
     "tinydb",
 ]
 
@@ -75,8 +79,15 @@ Documentation = "https://github.com/Euroswarms-Institute/LUAF#readme"
 "Bug Tracker" = "https://github.com/Euroswarms-Institute/LUAF/issues"
 
 [tool.setuptools]
-py-modules = ["LUAF", "luaf_publish", "luaf_designer", "luaf_x_post", "luaf_profiles", "luaf_tui", "luaf_defaults"]
-packages = ["profiles"]
+include-package-data = true
+zip-safe = false
+py-modules = ["LUAF"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["luaf*"]
+namespaces = true
 
 [tool.setuptools.package-data]
-"profiles" = ["**/*.txt"]
+"luaf.assets" = ["*.txt", "*.json", "*.jsonl", "*.css", "env.example"]
+"luaf.profiles" = ["**/*.txt"]
