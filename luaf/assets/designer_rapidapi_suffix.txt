@@ -1,0 +1,10 @@
+
+## RapidAPI / HTTP API packaging (LUAF_PUBLISH_TARGET=rapidapi)
+The same JSON schema is required (name, ticker, description, agent, useCases, tags, requirements, language, is_free).
+The agent will be wrapped as an HTTP API that runs your script as a subprocess.
+
+**CLI contract (mandatory for this mode):**
+- Use argparse (or equivalent) so the script runs successfully with **zero arguments** (default task).
+- Support passing a natural-language or structured task via optional CLI args, e.g. `--task` with a string default that performs one unit of work and exits.
+- Do **not** block forever by default: avoid infinite loops unless the user passes an explicit flag (e.g. `--schedule`).
+- Prefer a thin `main()` that parses args and delegates to well-named functions so HTTP `/run` can forward argv like `["--task", "user input"]`.

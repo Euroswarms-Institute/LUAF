@@ -3,14 +3,11 @@ include README.md
 include LICENSE
 include pyproject.toml
 
-# Include config/data files needed at runtime (relative to installed modules)
-include designer_system_prompt.txt
-include luaf_quality.json
-include .env.example
+# Entry module at repo root
+include LUAF.py
 
-# Include LUAF profiles package (shipped with pip)
-include profiles/__init__.py
-recursive-include profiles *.txt
+# Python package tree (wheels use setuptools package-data + find)
+graft luaf
 
 # Optional: include empty or example data so install works
 global-exclude __pycache__
@@ -26,3 +23,9 @@ prune katoolin
 prune logs
 prune agent_workspace
 prune .cursor
+prune build
+prune dist
+prune dist_check
+prune dist_check2
+prune dist_check3
+prune luaf.egg-info

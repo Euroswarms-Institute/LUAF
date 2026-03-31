@@ -16,9 +16,24 @@ The **`luaf`** CLI (single entrypoint) runs a pipeline that:
 2. **Researches** — DuckDuckGo (and optionally multi-hop RAG) for real-world context; search is biased toward **keyless/public APIs** when possible.
 3. **Builds** — Optional planner (templates) + designer LLM (swarms/ReAct or direct chat) to generate a full agent spec. The designer **prefers APIs that do not require API keys**; when keys are needed, generated code uses `os.environ.get` and comments on where to get/set them. **No mock or example data** — real code paths and inline comments for where to plug in credentials or data.
 4. **Validates** — Runs the generated Python in a subprocess; auto `pip install` on `ModuleNotFoundError` (with retries); min ~300 substantive lines, no stubs.
-5. **Launches** — `POST https://swarms.world/api/add-agent`; optional Solana tokenization. You can attach an **agent image** via `LUAF_AGENT_IMAGE_URL`, or use **keyless AI image generation** (`LUAF_GENERATE_AGENT_IMAGE=1` or `--generate-agent-image`) to create one from name/description (Pollinations.ai, no API key). After publish, the agent can be **run in a new terminal window** via `LUAF_RUN_IN_NEW_TERMINAL=1` (default). Optional X (Twitter) batch posting via `luaf_x_post` when `LUAF_POST_TO_X=1` and X API credentials are set.
+5. **Launches** — Default: `POST https://swarms.world/api/add-agent`; optional Solana tokenization. You can attach an **agent image** via `LUAF_AGENT_IMAGE_URL`, or use **keyless AI image generation** (`LUAF_GENERATE_AGENT_IMAGE=1` or `--generate-agent-image`) to create one from name/description (Pollinations.ai, no API key). After publish, the agent can be **run in a new terminal window** via `LUAF_RUN_IN_NEW_TERMINAL=1` (default). Optional X (Twitter) batch posting via `luaf.x_post` when `LUAF_POST_TO_X=1` and X API credentials are set.  
+   **Alternative:** `LUAF_PUBLISH_TARGET=rapidapi` (or `--publish-target rapidapi`) builds a **FastAPI wrapper** + **`openapi.json`** + Dockerfile under `rapid_bundles/`, then (if `LUAF_DRY_RUN=0` and Fly credentials are set) runs **managed Fly.io deploy**. Listing on RapidAPI is **assisted**: follow `ASSISTED_PUBLISH.md` in the bundle to import OpenAPI in the RapidAPI Hub and set pricing.
 
-So: **one command, one brief, one unit on-chain** (if you turn off dry-run and have keys).
+So: **one command, one brief, one unit on-chain** (Swarms + Solana), **or** one **API bundle** ready for RapidAPI (no Swarms POST).
+
+---
+
+## RapidAPI-assisted publish (summary)
+
+1. Set `LUAF_PUBLISH_TARGET=rapidapi` (or `luaf run --publish-target rapidapi`).
+2. Run the pipeline as usual (`luaf run`). After validation, LUAF writes a bundle to `LUAF_RAPID_BUNDLES_DIR` (default `rapid_bundles/<slug>_<timestamp>/`).
+3. Bundle contains: `generated_agent.py`, `app.py` (FastAPI: `GET /health`, `POST /run`), `openapi.json`, `rapid_listing.json`, `Dockerfile`, `fly.toml`, `ASSISTED_PUBLISH.md`.
+4. **Managed deploy (optional):** set `LUAF_FLY_API_TOKEN` and `LUAF_FLY_APP_NAME`, `LUAF_DRY_RUN=0`, `LUAF_MANAGED_DEPLOY=fly` (default). Requires [flyctl](https://fly.io/docs/hands-on/install-flyctl/) on `PATH`.
+5. **RapidAPI Hub:** import `openapi.json`, set base URL to your deployed host, configure plans.
+
+Designer output stays the same JSON shape; `designer_rapidapi_suffix.txt` adds CLI guidance so agents accept optional `--task`-style args for `/run` forwarding.
+
+Optional deps for local testing of the wrapper: `pip install "luaf[rapid]"` or `pip install fastapi uvicorn`.
 
 ---
 
@@ -64,16 +79,16 @@ luaf persistent   # loop until target SOL
   If `LUAF_USE_PLANNER=1` and `planner`/`executor`/`toolbox` are importable: `plan_from_topic_and_search(brief, snippets)` → `execute_plan(plan, get_template, required_payload_keys)`. If the result is a skeleton (<300 lines / `NotImplementedError`), LUAF can hand off to the designer. For pyclips support, install separately: `pip install "pyclips @ git+https://github.com/kyordhel/pyclips3.git@master"` (PyPI does not allow git URL deps in published metadata).
 
 - **Designer (optional)**  
-  If `LUAF_USE_DESIGNER=1`: builds a system prompt from `designer_system_prompt.txt` + `SWARMS_AGENT_DOCS` + quality packages for the topic (`luaf_quality.json`); can use Swarms Agent, ReAct, or direct OpenAI-compatible `/chat/completions`. Subprocess designer is default (`LUAF_DESIGNER_SUBPROCESS=1`); writes `final_agent_payload.json` into workspace. Exemplar retrieval (optional) from `designer_exemplars.jsonl` via `luaf_designer.retrieve_similar_exemplars`.
+  If `LUAF_USE_DESIGNER=1`: builds a system prompt from `designer_system_prompt.txt` + `SWARMS_AGENT_DOCS` + quality packages for the topic (`luaf_quality.json`); can use Swarms Agent, ReAct, or direct OpenAI-compatible `/chat/completions`. Subprocess designer is default (`LUAF_DESIGNER_SUBPROCESS=1`); writes `final_agent_payload.json` into workspace. Exemplar retrieval (optional) from `designer_exemplars.jsonl` via `luaf.designer.retrieve_similar_exemplars`.
 
 - **Parse**  
-  `parse_agent_payload(raw)` (in `luaf_designer`) — first JSON object, trailing-comma fix, required keys: `name`, `agent`, `description`, `language`, `requirements`, `useCases`, `tags`, `is_free`, `ticker`.
+  `parse_agent_payload(raw)` (in `luaf.designer`) — first JSON object, trailing-comma fix, required keys: `name`, `agent`, `description`, `language`, `requirements`, `useCases`, `tags`, `is_free`, `ticker`.
 
 - **Validation**  
   `run_agent_code_validation(code, VALIDATION_TIMEOUT)`: temp file, stub rewrites (search/LLM/publish), `USE_SEARCH=False`, `USE_LLM=False`, `method_whitelist`→`allowed_methods`; on `ModuleNotFoundError`, `_pip_install_module` + retry (up to `LUAF_MAX_MISSING_IMPORT_RETRIES`). On failure, prompt “Publish without validation?” (if TTY).
 
 - **Publish**  
-  `luaf_publish.publish_agent(payload, api_key, private_key, dry_run, ...)`: `POST {BASE_URL}/api/add-agent`. If not dry_run and payload not `tokenized_on: false`, tokenization uses `private_key`; balance from `LUAF_SOLANA_RPC_URL` (cached). Success → `append_agent_to_registry(AGENTS_REGISTRY_PATH, ...)`. If `luaf_x_post` is enabled, the agent is added to the X pending queue for batched 2-tweet threads.
+  `luaf.publishing.dispatch.publish_for_target(...)`: if `LUAF_PUBLISH_TARGET=swarms` (default), `luaf.publishing.swarms.publish_agent` → `POST {BASE_URL}/api/add-agent` (tokenization, registry, X queue as before). If `LUAF_PUBLISH_TARGET=rapidapi`, `luaf.publishing.rapid.publish_rapid_assisted` writes the bundle and optional Fly deploy; registry append → `rapidapi_agents.json`.
 
 - **Execution phase**  
   When `LUAF_RUN_IN_NEW_TERMINAL=1` (default), after a successful publish the generated agent is launched in a **new terminal window** (Windows: new console; Linux: gnome-terminal or xterm) with the brief as the task argument, so you can observe it. Disable with `LUAF_RUN_IN_NEW_TERMINAL=0`.
@@ -127,8 +142,9 @@ Override `.env` when passed. Apply to `luaf run` and `luaf persistent`.
 | `--topic-file PATH` | `LUAF_TOPIC_FILE` | Persistent: one topic per line. |
 | `--topic-list LIST` | `LUAF_TOPIC_LIST` | Persistent: comma-separated topics. |
 | `--topic-source single\|env\|file` | `LUAF_PERSISTENT_TOPIC_SOURCE` | Persistent: topic source. |
+| `--publish-target swarms\|rapidapi` | `LUAF_PUBLISH_TARGET` | Marketplace (default) vs RapidAPI bundle path. |
 
-Examples: `luaf run --no-dry-run --topic "DeFi feed" --generate-agent-image` · `luaf persistent --target-sol 20 --claim-delay-hours 0.25` · `luaf persistent --topic-file ./topics.txt --topic-source file`
+Examples: `luaf run --no-dry-run --topic "DeFi feed" --generate-agent-image` · `luaf persistent --target-sol 20 --claim-delay-hours 0.25` · `luaf persistent --topic-file ./topics.txt --topic-source file` · `luaf run --publish-target rapidapi --dry-run --topic "My API agent"`
 
 ---
 
@@ -142,9 +158,18 @@ Loaded from **cwd first**, then repo root (so your `.env` wins). Can be overridd
 
 **Publish / Swarms**
 
-- `SWARMS_API_KEY` — Bearer for `POST .../api/add-agent`. Optional if `LUAF_DRY_RUN=1` (default).
-- `LUAF_DRY_RUN` — `1` (default): no real publish. `0`: real publish (and tokenization if key provided).
-- `LUAF_SWARMS_BASE_URL` — Set by `luaf_publish`; default `https://swarms.world`.
+- `SWARMS_API_KEY` — Bearer for `POST .../api/add-agent`. Optional if `LUAF_DRY_RUN=1` (default). Not required when `LUAF_PUBLISH_TARGET=rapidapi`.
+- `LUAF_DRY_RUN` — `1` (default): no real publish. `0`: real publish (and tokenization if key provided). For `rapidapi`, `0` also enables managed Fly deploy when `LUAF_FLY_*` are set.
+- `LUAF_SWARMS_BASE_URL` — Set by `luaf.publishing.swarms`; default `https://swarms.world`.
+
+**Publish / RapidAPI (assisted)**
+
+- `LUAF_PUBLISH_TARGET` — `swarms` (default) or `rapidapi`.
+- `LUAF_SKIP_PUBLISH_TARGET_PROMPT` — `1` to skip the interactive “Swarms vs RapidAPI” question (CI / `.env`-only workflows). Omit `--publish-target` on the CLI to get the prompt when `LUAF_INTERACTIVE=1` and stdin is a TTY.
+- `LUAF_RAPID_BUNDLES_DIR` — Output directory for bundles (default `rapid_bundles`).
+- `LUAF_MANAGED_DEPLOY` — `fly` (default) runs `flyctl deploy` when token/app set; set `none` to skip deploy (bundle only).
+- `LUAF_FLY_API_TOKEN` / `LUAF_FLY_APP_NAME` / `LUAF_FLY_REGION` — Fly.io managed deploy.
+- `LUAF_RAPID_PLACEHOLDER_BASE_URL` — Placeholder in generated `openapi.json` before deploy (default `https://example.com`).
 
 **Solana / tokenization**
 
@@ -202,7 +227,7 @@ Loaded from **cwd first**, then repo root (so your `.env` wins). Can be overridd
 - `LUAF_AGENT_IMAGE_URL` — Fixed image URL for all published agents (overrides payload and keyless).
 - `LUAF_AGENT_IMAGE_BASE_URL` — Override keyless image base (default `https://gen.pollinations.ai`).
 
-**X (Twitter) posting** (optional; requires `luaf_x_post.py`)
+**X (Twitter) posting** (optional; requires `luaf.x_post`)
 
 - `LUAF_POST_TO_X` — `1` to enable batched 2-tweet threads for published agents.
 - `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET` — X OAuth 1.0a credentials (all four required if posting).
@@ -218,22 +243,19 @@ Loaded from **cwd first**, then repo root (so your `.env` wins). Can be overridd
 
 ---
 
-## Files LUAF expects (same directory)
+## Package layout (repo / pip)
 
-- **`luaf_publish.py`** — `publish_agent`, balance, registry, claim_fees. Required for publish.
-- **`luaf_designer.py`** — `parse_agent_payload`, `retrieve_similar_exemplars`. Required for designer flow.
-- **`luaf_tui.py`** — `create_luaf_app`. Optional; experimental Rich TUI (use `luaf --tui`).
-- **`luaf_x_post.py`** — Optional. X (Twitter) batch posting: add agent to pending, post 2–3 agents per 2-tweet thread when `LUAF_POST_TO_X=1` and X API credentials are set.
-- **`luaf_profiles.py`** — Optional. Profile selection for designer system prompt / topic focus.
-- **`tui.css`** — Design reference for `luaf_tui`. Optional.
-- **`designer_system_prompt.txt`** — Full designer system prompt (keyless-API preference, no mocks, comment-based data placement). If missing, designer behavior may be wrong.
-- **`luaf_quality.json`** — Optional. `design_angles`, `search_variant_suffixes`, `quality_packages_by_category`, `quality_category_keywords`. Fallback used if missing.
-- **`designer_exemplars.jsonl`** — Optional. One JSON object per line for retrieval.
-- **`.env`** — Loaded from **cwd first**, then repo root (your `.env` wins). Use **`env.example`** or **`.env.example`** as template; `luaf init` creates/updates `.env` from it (or uses a bundled template when installed via pip). Edit `.env` for all `LUAF_*` options.
+- **`LUAF.py`** — Repo entrypoint and `luaf` console script target; keep at repository root when developing from a clone.
+- **`luaf/`** — Installable package: **`luaf.designer`**, **`luaf.defaults`**, **`luaf.tui`**, **`luaf.x_post`**, **`luaf.profiles_loader`**, **`luaf.publishing.swarms`** (`publish_agent`, balance, registry, claim_fees), **`luaf.publishing.dispatch`** (`publish_for_target`), **`luaf.publishing.model`**, **`luaf.publishing.rapid`**.
+- **`luaf/assets/`** — Bundled data in wheels/sdists: `designer_system_prompt.txt`, `designer_rapidapi_suffix.txt`, `luaf_quality.json`, `designer_exemplars.jsonl`, `tui.css`, `env.example`. Resolved via `importlib.resources` (legacy `luaf_assets/` next to the install is still accepted).
+- **`luaf/profiles/`** — Profile packages for designer topic focus (optional).
+- **`.env`** — Loaded from **cwd first**, then repo root (your `.env` wins). `luaf init` uses **`env.example`** from `luaf.assets` (pip) or repo, or **`.env.example`** in cwd; bundled string template if none found. Edit `.env` for all `LUAF_*` options.
 
 **Outputs**
 
-- **`tokenized_agents.json`** — Registry of published units (name, ticker, listing_url, id, token_address, published_at).
+- **`tokenized_agents.json`** — Registry of published Swarms units (name, ticker, listing_url, id, token_address, published_at).
+- **`rapidapi_agents.json`** — Registry of RapidAPI bundles (name, ticker, bundle_path, public_url, published_at).
+- **`rapid_bundles/`** — Per-run API bundles when using `LUAF_PUBLISH_TARGET=rapidapi`.
 - **`logs/luaf.log`** — Rotating log (if `LUAF_LOG_FILE=1`).
 - **`agent_workspace/`** — Designer workspaces and any `final_agent_payload.json`.
 - **`generated_agents/`** (or `LUAF_GENERATED_AGENTS_DIR`) — Saved generated agent `.py` files.
@@ -242,8 +264,8 @@ Loaded from **cwd first**, then repo root (so your `.env` wins). Can be overridd
 
 ## API surface (what LUAF.py hits)
 
-- **Publish:** `POST https://swarms.world/api/add-agent` (via `luaf_publish`), JSON body, `Authorization: Bearer <SWARMS_API_KEY>`.
-- **Claim fees:** `POST https://swarms.world/api/product/claimfees` (via `luaf_publish`).
+- **Publish:** `POST https://swarms.world/api/add-agent` (via `luaf.publishing.swarms`), JSON body, `Authorization: Bearer <SWARMS_API_KEY>`.
+- **Claim fees:** `POST https://swarms.world/api/product/claimfees` (via `luaf.publishing.swarms`).
 - **Solana:** RPC `getBalance` at `LUAF_SOLANA_RPC_URL` (and tokenization via Swarms backend when not dry-run).
 - **LLM:** OpenAI-compatible `POST .../chat/completions` and `.../embeddings` at `OPENAI_BASE_URL` (and Swarms Cloud if used).
 
@@ -278,6 +300,6 @@ Loaded from **cwd first**, then repo root (so your `.env` wins). Can be overridd
 
 **LUAF** = one CLI: **brief → research → build → validate → launch**.  
 Install: `pip install luaf` or clone + `pip install -e .`. Commands: **`luaf init`** (setup .env and API keys), **`luaf doctor`** (check config), **`luaf run`**, **`luaf persistent`**, **`luaf help`**. All config is overridable via **CLI flags** (e.g. `--dry-run`, `--target-sol`, `--topic`, `--generate-agent-image`). Default UI is the CLI menu; use **`luaf --tui`** for the experimental TUI.  
-Designer prefers **keyless APIs** and **no mock data**; when credentials are needed, generated code uses env and comments for where to get/set them. You can add a **keyless agent image** per publish (`LUAF_GENERATE_AGENT_IMAGE=1` or `--generate-agent-image`, Pollinations.ai). After publish, agents can be **launched in a new terminal** (`LUAF_RUN_IN_NEW_TERMINAL=1`). Optional **X (Twitter)** batch posting via `luaf_x_post` when configured.  
-Requires **`luaf_publish.py`** and **`luaf_designer.py`** for full flow; **`luaf_tui.py`** and **`luaf_x_post.py`** are optional.  
-Publish endpoint: **`POST https://swarms.world/api/add-agent`**.
+Designer prefers **keyless APIs** and **no mock data**; when credentials are needed, generated code uses env and comments for where to get/set them. You can add a **keyless agent image** per publish (`LUAF_GENERATE_AGENT_IMAGE=1` or `--generate-agent-image`, Pollinations.ai). After publish, agents can be **launched in a new terminal** (`LUAF_RUN_IN_NEW_TERMINAL=1`). Optional **X (Twitter)** batch posting via `luaf.x_post` when configured.  
+Full flow needs **`luaf.publishing`** (dispatch + swarms + designer integration) and **`luaf.designer`**; **`luaf.tui`** and **`luaf.x_post`** are optional.  
+Default Swarms publish: **`POST https://swarms.world/api/add-agent`**. Optional RapidAPI path: **`LUAF_PUBLISH_TARGET=rapidapi`** (bundle + `openapi.json` + assisted Hub steps).

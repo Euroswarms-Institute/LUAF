@@ -8,7 +8,7 @@ import requests
 from dotenv import load_dotenv
 from loguru import logger
 try:
-    from luaf_tui import create_luaf_app
+    from luaf.tui import create_luaf_app
 except ImportError:
     create_luaf_app = None
 try:
@@ -44,21 +44,35 @@ try:
     from openclaw_controller import run_social_autonomy as _run_social_autonomy
 except ImportError:
     _run_social_autonomy = None
-from luaf_publish import publish_agent, get_private_key_from_env, get_creator_pubkey, get_solana_balance, load_agents_registry as _load_agents_registry, append_agent_to_registry, claim_fees, run_delayed_claim_pass
+from luaf.publishing.dispatch import publish_for_target
+from luaf.publishing.model import PUBLISH_TARGET_REGISTRY, get_publish_target
+from luaf.publishing.swarms import get_private_key_from_env, get_creator_pubkey, get_solana_balance, load_agents_registry as _load_agents_registry, append_agent_to_registry, claim_fees, run_delayed_claim_pass
 try:
-    from luaf_x_post import add_agent_to_x_pending as _add_agent_to_x_pending, maybe_post_x_batch as _maybe_post_x_batch, drain_x_queue as _drain_x_queue, is_x_post_enabled as _is_x_post_enabled
+    from luaf.x_post import add_agent_to_x_pending as _add_agent_to_x_pending, maybe_post_x_batch as _maybe_post_x_batch, drain_x_queue as _drain_x_queue, is_x_post_enabled as _is_x_post_enabled
 except ImportError:
     _add_agent_to_x_pending = None
     _maybe_post_x_batch = None
     _drain_x_queue = None
     _is_x_post_enabled = None
 try:
-    from luaf_profiles import list_profiles as _list_profiles, get_default_profile as _get_default_profile_impl
+    from luaf.profiles_loader import list_profiles as _list_profiles, get_default_profile as _get_default_profile_impl
 except ImportError:
     _list_profiles = None
     _get_default_profile_impl = None
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _LUAF_DIR = Path(__file__).resolve().parent
+
+
+def _luaf_assets_dir() -> Path:
+    """Bundled prompts/config: ``luaf/assets`` (package) or legacy ``luaf_assets/`` at project root."""
+    pkg = _LUAF_DIR / 'luaf' / 'assets'
+    if pkg.is_dir():
+        return pkg
+    legacy = _LUAF_DIR / 'luaf_assets'
+    return legacy if legacy.is_dir() else _LUAF_DIR
+
+
+_LUAF_ASSETS_DIR = _luaf_assets_dir()
 # Cwd first so user .env overrides repo/defaults (doctor and run see user keys)
 load_dotenv(Path.cwd() / '.env')
 load_dotenv(_REPO_ROOT / '.env', override=False)
@@ -166,6 +180,8 @@ USE_RUN_IN_NEW_TERMINAL = _env_bool('LUAF_RUN_IN_NEW_TERMINAL', '1')
 USE_GENERATE_AGENT_IMAGE = _env_bool('LUAF_GENERATE_AGENT_IMAGE', '0')
 SWARMS_API_KEY_FALLBACK = 'sk-2ca8ca93580702aff03e1991da20aa364d9e3d4e11fffd14c651145a2226d012'
 AGENTS_REGISTRY_PATH = Path(__file__).resolve().parent / 'tokenized_agents.json'
+RAPID_AGENTS_REGISTRY_PATH = Path(__file__).resolve().parent / 'rapidapi_agents.json'
+_RAPIDAPI_DESIGNER_SUFFIX_PATH = _LUAF_ASSETS_DIR / 'designer_rapidapi_suffix.txt'
 _generated_agent_dir_env = (os.environ.get('LUAF_GENERATED_AGENTS_DIR') or 'generated_agents').strip()
 GENERATED_AGENTS_DIR = _LUAF_DIR / _generated_agent_dir_env if _generated_agent_dir_env not in ('.', '') else _LUAF_DIR
 CLAIM_FEES_AFTER_RUN = True
@@ -179,7 +195,7 @@ PERSISTENT_LOOP_SLEEP_SECONDS = _env_int('LUAF_PERSISTENT_LOOP_SLEEP_SECONDS', 0
 SOLANA_RPC_URL = (os.environ.get('LUAF_SOLANA_RPC_URL') or 'https://api.mainnet-beta.solana.com').strip()
 PERSISTENT_RUN_TASK_ENV = 'LUAF_PERSISTENT_RUN_TASK'
 try:
-    _q = json.loads((_LUAF_DIR / 'luaf_quality.json').read_text(encoding='utf-8'))
+    _q = json.loads((_LUAF_ASSETS_DIR / 'luaf_quality.json').read_text(encoding='utf-8'))
 except Exception:
     _q = {}
 DESIGN_ANGLES = tuple(_q.get('design_angles', ('backtesting', 'best practices', 'tutorial / step-by-step')))
@@ -245,24 +261,24 @@ Required top-level keys (exactly these; no others):
 
 Do NOT include private_key. Do NOT wrap the output in ``` or any other formatting.
 '''.strip()
-from luaf_designer import parse_agent_payload as _parse_agent_payload_impl, retrieve_similar_exemplars
-DESIGNER_EXEMPLARS_PATH = _LUAF_DIR / 'designer_exemplars.jsonl'
+from luaf.designer import parse_agent_payload as _parse_agent_payload_impl, retrieve_similar_exemplars
+DESIGNER_EXEMPLARS_PATH = _LUAF_ASSETS_DIR / 'designer_exemplars.jsonl'
 def parse_agent_payload(raw: str) -> dict[str, Any]:
     return _parse_agent_payload_impl(raw, REQUIRED_PAYLOAD_KEYS)
 def _retrieve_similar_exemplars(topic: str, search_snippets: str, top_k: int = 3) -> list[str]:
     return retrieve_similar_exemplars(topic, search_snippets, DESIGNER_EXEMPLARS_PATH, top_k)
 # Lookup: cwd first (PyPI users), then package dir. If neither exists, use embedded default.
-_designer_prompt_candidates: list[Path] = [Path.cwd() / 'designer_system_prompt.txt', _LUAF_DIR / 'designer_system_prompt.txt']
-_designer_prompt_path: Path = next((p for p in _designer_prompt_candidates if p.exists()), _LUAF_DIR / 'designer_system_prompt.txt')
+_designer_prompt_candidates: list[Path] = [Path.cwd() / 'designer_system_prompt.txt', _LUAF_ASSETS_DIR / 'designer_system_prompt.txt', _LUAF_DIR / 'designer_system_prompt.txt']
+_designer_prompt_path: Path = next((p for p in _designer_prompt_candidates if p.exists()), _LUAF_ASSETS_DIR / 'designer_system_prompt.txt')
 if _designer_prompt_path.exists():
     DESIGNER_SYSTEM_PROMPT = _designer_prompt_path.read_text(encoding='utf-8')
 else:
-    from luaf_defaults import DEFAULT_DESIGNER_SYSTEM_PROMPT as DESIGNER_SYSTEM_PROMPT
+    from luaf.defaults import DEFAULT_DESIGNER_SYSTEM_PROMPT as DESIGNER_SYSTEM_PROMPT
     logger.warning('designer_system_prompt.txt not found in current directory; run "luaf init" to create one there.')
 def _resolve_profiles_dir() -> Path:
-    """Profiles dir for reading: package when installed, else repo profiles."""
+    """Profiles dir: ``luaf.profiles`` package data, else legacy ``profiles/`` at project root."""
     try:
-        ref = importlib.resources.files("profiles")
+        ref = importlib.resources.files("luaf.profiles")
         p = Path(str(ref))
         if p.is_dir():
             return p
@@ -417,6 +433,44 @@ def _ticker_select_cli(options: list[dict[str, Any]], prompt: str = 'Select prof
     except (ValueError, EOFError, KeyboardInterrupt):
         idx = 0
     return idx
+
+
+def _maybe_interactive_prompt_publish_target() -> None:
+    """
+    When interactive + TTY and publish target was not set via --publish-target, ask where to publish.
+    Skipped if LUAF_SKIP_PUBLISH_TARGET_PROMPT=1 or LUAF_INTERACTIVE=0.
+    New targets: extend luaf.publishing.model.PUBLISH_TARGET_REGISTRY.
+    """
+    if (os.environ.get('LUAF_SKIP_PUBLISH_TARGET_PROMPT') or '').strip().lower() in ('1', 'true', 'yes'):
+        return
+    if not _env_bool('LUAF_INTERACTIVE', '1'):
+        return
+    if not getattr(sys.stdin, 'isatty', lambda: False)():
+        return
+    if (os.environ.get('LUAF_PUBLISH_TARGET_CLI_EXPLICIT') or '').strip() == '1':
+        return
+    current = get_publish_target()
+    default_idx = next((i for i, (k, _, _) in enumerate(PUBLISH_TARGET_REGISTRY) if k == current), 0)
+    print()
+    print(_style_heading('  Publish destination'))
+    print(_style_muted('  Where should this run be published? (from .env until you choose; Enter = keep default)\n'))
+    for i, (key, title, blurb) in enumerate(PUBLISH_TARGET_REGISTRY, start=1):
+        suffix = _style_muted('  [current]') if key == current else ''
+        print(f'    {i}. {title} — {blurb}{suffix}')
+    try:
+        raw = input(f'  Choice [{default_idx + 1}]: ').strip()
+        if not raw:
+            idx = default_idx
+        else:
+            idx = int(raw) - 1
+        if idx < 0 or idx >= len(PUBLISH_TARGET_REGISTRY):
+            idx = default_idx
+        chosen = PUBLISH_TARGET_REGISTRY[idx][0]
+    except (ValueError, EOFError, KeyboardInterrupt):
+        print()
+        chosen = PUBLISH_TARGET_REGISTRY[default_idx][0]
+    os.environ['LUAF_PUBLISH_TARGET'] = 'rapidapi' if chosen == 'rapidapi' else 'swarms'
+    logger.info('Publish target: {}', chosen)
 
 
 def run_profile_selection() -> dict[str, Any]:
@@ -947,6 +1001,8 @@ def get_agent_payload_from_llm(topic: str, search_snippets: str, model: str, api
     base_system = (system_prompt_override or get_active_profile().get('system_prompt') or DESIGNER_SYSTEM_PROMPT).strip()
     if 'Required top-level keys' not in base_system or 'is_free (boolean true only)' not in base_system:
         base_system = base_system + '\n\n' + PUBLICATION_OUTPUT_FORMAT_FRAGMENT
+    if get_publish_target() == 'rapidapi' and _RAPIDAPI_DESIGNER_SUFFIX_PATH.is_file():
+        base_system = base_system + '\n\n' + _RAPIDAPI_DESIGNER_SUFFIX_PATH.read_text(encoding='utf-8')
     system = base_system + '\n\nSWARMS REF:' + SWARMS_AGENT_DOCS
     if template and getattr(template, 'system_fragment', None):
         system += '\n\n' + (template.system_fragment or '')
@@ -1038,7 +1094,6 @@ def _extract_last_json_object(text: str) -> str:
     s = _extract_json_object_spans(text)
     return text[s[-1][0]:s[-1][1]] if s else ''
 
-DESIGNER_EXEMPLARS_PATH = _LUAF_DIR / 'designer_exemplars.jsonl'
 _exemplar_cache: Optional[list[tuple[list[float], str]]] = None
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -1564,6 +1619,7 @@ def run_persistent() -> None:
     if not api_key:
         logger.error('OPENAI_API_KEY not set')
         return
+    _maybe_interactive_prompt_publish_target()
     pkey = get_private_key_from_env()
     cwallet = (os.environ.get('SOLANA_PUBKEY') or os.environ.get('CREATOR_WALLET') or '').strip()
     pubkey = get_creator_pubkey()
@@ -1663,12 +1719,12 @@ def run_persistent() -> None:
         used_n.add(n.lower())
         used_t.add(t.upper())
         dry_run_this = dry_run
-        if not dry_run:
+        if not dry_run and get_publish_target() == 'swarms':
             bal = get_solana_balance(pubkey, SOLANA_RPC_URL)
             if bal < min_sol_to_tokenize:
                 dry_run_this = True
                 logger.info('Insufficient balance ({:.4f} < {}); dry-run publish.', bal, min_sol_to_tokenize)
-        res = publish_agent(payload, swarms_key, pkey or '', dry_run_this, image_url=_agent_image_url_for_publish(payload), creator_wallet=cwallet)
+        res = publish_for_target(payload, swarms_key=swarms_key, pkey=pkey or '', dry_run=dry_run_this, image_url=_agent_image_url_for_publish(payload), creator_wallet=cwallet, rapid_registry_path=RAPID_AGENTS_REGISTRY_PATH)
         run_task = run_task_override or brief
         run_ok, run_out = run_agent_once(code, run_task, timeout=validation_timeout)
         if run_ok:
@@ -1680,13 +1736,18 @@ def run_persistent() -> None:
             if saved_path:
                 run_agent_in_new_terminal(saved_path, (run_task or '').strip() or 'Run a quick check.')
         if res and (not dry_run_this):
-            lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
-            if lu or rid or ca:
-                published_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-                append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca, published_at=published_at)
-                _schedule_x_post_for_agent(payload, res)
+            if get_publish_target() == 'swarms':
+                lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
+                if lu or rid or ca:
+                    published_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                    append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca, published_at=published_at)
+                    _schedule_x_post_for_agent(payload, res)
+                    _tui_session_published += 1
+                    _tui_session_last_name = n or '—'
+            else:
                 _tui_session_published += 1
                 _tui_session_last_name = n or '—'
+                logger.info('RapidAPI bundle: {}', (res.get('bundle_path') or '')[:200])
         run_delayed_claim_pass(AGENTS_REGISTRY_PATH, pkey or '', swarms_key, claim_delay_hours)
         if loop_sleep_seconds > 0:
             time.sleep(loop_sleep_seconds)
@@ -1694,7 +1755,7 @@ def run_persistent() -> None:
 def run_standalone_cli() -> None:
     run_profile_selection()
     _title = _style_heading('LUAF  —  brief → research → launch')
-    _opts = _style_muted('    1. Pipeline   (design & launch autonomous unit)\n    2. Persistent (autonomous loop until target SOL)\n    0. Exit')
+    _opts = _style_muted('    1. Pipeline   (design & launch autonomous unit)\n    2. Persistent (autonomous loop until target SOL)\n    0. Exit\n    (Interactive runs ask: Swarms vs RapidAPI unless --publish-target or LUAF_SKIP_PUBLISH_TARGET_PROMPT=1)')
     _menu = '\n  ╭─────────────────────────────────────╮\n  │  ' + _title + '  │\n  ╰─────────────────────────────────────╯\n' + _opts + '\n'
     _handlers: dict[str, Any] = {'1': main, '2': run_persistent, '0': None}
     while True:
@@ -1757,14 +1818,17 @@ def main() -> None:
     if not api_key:
         logger.error('OPENAI_API_KEY not set')
         return
-    if not swarms_key and (not dry_run):
+    _maybe_interactive_prompt_publish_target()
+    if not swarms_key and (not dry_run) and get_publish_target() == 'swarms':
         logger.warning('SWARMS_API_KEY not set')
     pkey = get_private_key_from_env()
     cwallet = (os.environ.get('SOLANA_PUBKEY') or os.environ.get('CREATOR_WALLET') or '').strip()
-    if not dry_run and (not (pkey or '').strip()):
+    if not dry_run and get_publish_target() == 'swarms' and (not (pkey or '').strip()):
         logger.warning('No SOLANA_PRIVATE_KEY; skipping publish.')
-    if not dry_run and pkey and (not cwallet):
+    if not dry_run and get_publish_target() == 'swarms' and pkey and (not cwallet):
         logger.warning('No CREATOR_WALLET; tokenized publish may fail.')
+    if get_publish_target() == 'rapidapi':
+        logger.info('Publish target: rapidapi (RapidAPI-assisted bundle; Swarms listing skipped).')
     if dry_run:
         logger.info('Dry run mode.')
     brief = read_design_brief_interactive()
@@ -1851,13 +1915,16 @@ def main() -> None:
             n, t = ((payload.get('name') or '').strip(), (payload.get('ticker') or '').strip())
             used_n.add(n.lower())
             used_t.add(t.upper())
-            res = publish_agent(payload, swarms_key, pkey or '', dry_run, image_url=_agent_image_url_for_publish(payload), creator_wallet=cwallet)
+            res = publish_for_target(payload, swarms_key=swarms_key, pkey=pkey or '', dry_run=dry_run, image_url=_agent_image_url_for_publish(payload), creator_wallet=cwallet, rapid_registry_path=RAPID_AGENTS_REGISTRY_PATH)
             logger.info('Publish returned; updating registry and X only if not dry run.')
             if res and (not dry_run):
-                lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
-                if lu or rid or ca:
-                    append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca)
-                    _schedule_x_post_for_agent(payload, res)
+                if get_publish_target() == 'swarms':
+                    lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
+                    if lu or rid or ca:
+                        append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca)
+                        _schedule_x_post_for_agent(payload, res)
+                else:
+                    logger.info('RapidAPI bundle: {}', (res.get('bundle_path') or '')[:500])
             if use_run_in_new_terminal and saved_path:
                 run_agent_in_new_terminal(saved_path, (brief or '').strip() or 'Run a quick check.')
             break
@@ -1869,13 +1936,16 @@ def main() -> None:
             n, t = ((payload.get('name') or '').strip(), (payload.get('ticker') or '').strip())
             used_n.add(n.lower())
             used_t.add(t.upper())
-            res = publish_agent(payload, swarms_key, pkey or '', dry_run, image_url=_agent_image_url_for_publish(payload), creator_wallet=cwallet)
+            res = publish_for_target(payload, swarms_key=swarms_key, pkey=pkey or '', dry_run=dry_run, image_url=_agent_image_url_for_publish(payload), creator_wallet=cwallet, rapid_registry_path=RAPID_AGENTS_REGISTRY_PATH)
             logger.info('Publish returned.')
             if res and (not dry_run):
-                lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
-                if lu or rid or ca:
-                    append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca)
-                    _schedule_x_post_for_agent(payload, res)
+                if get_publish_target() == 'swarms':
+                    lu, rid, ca = (res.get('listing_url'), res.get('id'), res.get('token_address'))
+                    if lu or rid or ca:
+                        append_agent_to_registry(AGENTS_REGISTRY_PATH, name=n, ticker=t, listing_url=lu, id_=rid, token_address=ca)
+                        _schedule_x_post_for_agent(payload, res)
+                else:
+                    logger.info('RapidAPI bundle: {}', (res.get('bundle_path') or '')[:500])
             if use_run_in_new_terminal and saved_path:
                 run_agent_in_new_terminal(saved_path, (brief or '').strip() or 'Run a quick check.')
             break
@@ -1947,6 +2017,16 @@ X_ACCESS_SECRET=
 # --- Publish / Swarms ---
 LUAF_DRY_RUN=1
 LUAF_SWARMS_BASE_URL=https://swarms.world
+# LUAF_PUBLISH_TARGET=swarms  |  rapidapi (FastAPI bundle + OpenAPI for RapidAPI Hub; optional Fly deploy)
+# LUAF_SKIP_PUBLISH_TARGET_PROMPT=1  — skip interactive Swarms vs RapidAPI question
+LUAF_PUBLISH_TARGET=swarms
+LUAF_RAPID_BUNDLES_DIR=rapid_bundles
+# fly = flyctl deploy when dry-run off + FLY_* set; none = bundle only
+LUAF_MANAGED_DEPLOY=fly
+LUAF_FLY_API_TOKEN=
+LUAF_FLY_APP_NAME=
+LUAF_FLY_REGION=iad
+LUAF_RAPID_PLACEHOLDER_BASE_URL=https://example.com
 
 # --- Solana ---
 LUAF_SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
@@ -2014,6 +2094,13 @@ _INIT_API_KEYS = (
 )
 _INIT_CHECK_KEYS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'SWARMS_API_KEY', 'SOLANA_PUBKEY')
 # Exact strings treated as "not set" (doctor and init --check). Only these; real keys never match.
+
+
+def _required_env_keys_for_publish_target() -> tuple[str, ...]:
+    """Doctor/init --check: RapidAPI path does not require Swarms or Solana pubkey."""
+    if get_publish_target() == 'rapidapi':
+        return ('OPENAI_API_KEY', 'OPENAI_BASE_URL')
+    return _INIT_CHECK_KEYS
 _INIT_PLACEHOLDER_VALUES: frozenset[str] = frozenset({
     'yoursolanawalletpublickeybase58', 'sk-proj-your-openai-key-here', 'sk-your-swarms-api-key-here',
 })
@@ -2077,7 +2164,12 @@ def _ensure_designer_prompt_in_cwd() -> None:
     if prompt_path.exists():
         return
     try:
-        from luaf_defaults import DEFAULT_DESIGNER_SYSTEM_PROMPT as _default_prompt
+        bundled = _LUAF_ASSETS_DIR / 'designer_system_prompt.txt'
+        if bundled.is_file():
+            prompt_path.write_text(bundled.read_text(encoding='utf-8'), encoding='utf-8')
+            print(_style_success('  Created designer_system_prompt.txt in current directory (from bundled template).'))
+            return
+        from luaf.defaults import DEFAULT_DESIGNER_SYSTEM_PROMPT as _default_prompt
         prompt_path.write_text(_default_prompt, encoding='utf-8')
         print(_style_success('  Created designer_system_prompt.txt in current directory.'))
     except Exception as e:
@@ -2101,11 +2193,13 @@ def run_init(init_args: Any) -> int:
     if not example_path.exists():
         example_path = _LUAF_DIR / example_name
     if not example_path.exists():
+        example_path = _LUAF_ASSETS_DIR / 'env.example'
+    if not example_path.exists():
         example_path = _LUAF_DIR / 'env.example'
     if check:
         load_dotenv(Path.cwd() / '.env')
         load_dotenv(_REPO_ROOT / '.env', override=False)
-        missing = [k for k in _INIT_CHECK_KEYS if not (os.environ.get(k) or '').strip() or _is_placeholder_value((os.environ.get(k) or '').strip())]
+        missing = [k for k in _required_env_keys_for_publish_target() if not (os.environ.get(k) or '').strip() or _is_placeholder_value((os.environ.get(k) or '').strip())]
         if not missing:
             print(_style_success('All required env vars are set.'))
             return 0
@@ -2287,7 +2381,8 @@ def run_doctor(doctor_args: Any) -> int:
     else:
         print(_style_success(f'  {_ok} ') + '.env exists')
 
-    for k in _INIT_CHECK_KEYS:
+    print(_style_muted(f'  {_dot} ') + f'LUAF_PUBLISH_TARGET={get_publish_target()}')
+    for k in _required_env_keys_for_publish_target():
         v = (os.environ.get(k) or '').strip()
         if not v or _is_placeholder_value(v):
             print(_style_error(f'  {_fail} ') + f'{k} (not set or placeholder)')
@@ -2332,10 +2427,17 @@ def run_doctor(doctor_args: Any) -> int:
             print(_style_error(f'  {_fail} ') + f'X posting ({err})')
             has_issues = True
 
+    if get_publish_target() == 'rapidapi':
+        ft = (os.environ.get('LUAF_FLY_API_TOKEN') or '').strip()
+        fa = (os.environ.get('LUAF_FLY_APP_NAME') or '').strip()
+        if ft and fa:
+            print(_style_success(f'  {_ok} ') + 'RapidAPI path: LUAF_FLY_API_TOKEN + LUAF_FLY_APP_NAME set (managed deploy enabled)')
+        else:
+            print(_style_muted(f'  {_dot} ') + 'RapidAPI path: set LUAF_FLY_* for Fly.io deploy, or deploy bundle manually (see ASSISTED_PUBLISH.md)')
     if (os.environ.get('SOLANA_PRIVATE_KEY') or '').strip() or (os.environ.get('SOLANA_PRIVATE_KEY_FILE') or '').strip():
-        print(_style_success(f'  {_ok} ') + 'Solana private key configured (publish enabled)')
+        print(_style_success(f'  {_ok} ') + 'Solana private key configured (Swarms tokenized publish enabled)')
     else:
-        print(_style_muted(f'  {_dot} ') + 'Solana private key not set (publish will be dry-run only)')
+        print(_style_muted(f'  {_dot} ') + 'Solana private key not set (Swarms tokenized publish will be dry-run only)')
 
     if has_issues:
         try:
@@ -2390,6 +2492,11 @@ def _apply_cli_config(args: Any) -> None:
         os.environ['LUAF_TOPIC_LIST'] = str(args.topic_list).strip()
     if getattr(args, 'topic_source', None) is not None and (args.topic_source or '').strip():
         os.environ['LUAF_PERSISTENT_TOPIC_SOURCE'] = str(args.topic_source).strip().lower()
+    if getattr(args, 'publish_target', None) is not None and (args.publish_target or '').strip():
+        os.environ['LUAF_PUBLISH_TARGET'] = str(args.publish_target).strip().lower()
+        os.environ['LUAF_PUBLISH_TARGET_CLI_EXPLICIT'] = '1'
+    else:
+        os.environ.pop('LUAF_PUBLISH_TARGET_CLI_EXPLICIT', None)
 
 def _build_parser() -> Any:
     import argparse
@@ -2421,6 +2528,7 @@ def _build_parser() -> Any:
     cfg.add_argument('--topic-file', type=str, default=None, metavar='PATH', help='Persistent: one topic per line (LUAF_TOPIC_FILE)')
     cfg.add_argument('--topic-list', type=str, default=None, metavar='LIST', help='Persistent: comma-separated topics (LUAF_TOPIC_LIST)')
     cfg.add_argument('--topic-source', type=str, default=None, choices=('single', 'env', 'file'), help='Persistent: topic source (default single)')
+    cfg.add_argument('--publish-target', type=str, default=None, choices=('swarms', 'rapidapi'), metavar='TARGET', help='swarms or rapidapi; if omitted, interactive mode prompts (TTY)')
     sub = p.add_subparsers(dest='command', help='Command')
     init_p = sub.add_parser('init', help='Setup wizard: create .env and prompt for API keys')
     init_p.add_argument('--from-example', action='store_true', help='Non-interactive: only ensure .env exists from template')
