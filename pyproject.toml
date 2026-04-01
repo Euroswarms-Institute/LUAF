@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "luaf"
-version = "1.3.3"
+version = "1.3.5"
 description = "Brief → research → build → validate → launch autonomous tokenized business units (Swarms, Solana)"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
