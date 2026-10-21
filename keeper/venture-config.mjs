@@ -9,11 +9,11 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// The venture stacks these keepers service are deployed from DoublePlus, which
-// is where their artifacts are written. This repo holds no copy of them, so
-// there is no filename to guess from a chain id: the path is always given.
-// Naming a default here would only turn a missing artifact into a confusing
-// "no such file" instead of a clear instruction.
+// The stacks these keepers service are deployed by contracts/scripts, which
+// write their artifacts to contracts/deployments. The path is still always
+// given rather than guessed from a chain id: one chain can carry several tenant
+// stacks, and a keeper pointed at the wrong one would sell the wrong treasury's
+// coins. Naming a default here would only turn that into a silent mistake.
 const DEPLOYMENTS = {};
 
 function fail(msg) {
@@ -62,7 +62,7 @@ export function loadDeployment() {
   if (!explicit && !DEPLOYMENTS[chainId]) {
     fail(
       `Set DEPLOYMENT_FILE to the venture or tenant deployment JSON for chain ${chainId} ` +
-        "(written by the venture deploy, e.g. a DoublePlus " +
+        "(written by deploy-tenant.ts, e.g. " +
         "contracts/deployments/tenant-<slug>-<chainId>.json).",
     );
   }

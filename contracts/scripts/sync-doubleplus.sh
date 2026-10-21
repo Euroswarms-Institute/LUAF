@@ -8,10 +8,15 @@ DST="$(cd "$(dirname "$0")/.." && pwd)/contracts/vendor/doubleplus"
 TESTS="$(cd "$(dirname "$0")/.." && pwd)/test/helpers"
 [ -d "$SRC/v4/venture" ] || { echo "no DoublePlus contracts at $SRC" >&2; exit 1; }
 rm -rf "$DST"
-mkdir -p "$DST/v4/venture" "$DST/v4/interfaces" "$DST/mocks"
+mkdir -p "$DST/v4/venture" "$DST/v4/interfaces" "$DST/v4/test" "$DST/mocks"
 cp "$SRC"/v4/venture/*.sol "$DST/v4/venture/"
 cp "$SRC/v4/QuiverToken.sol" "$DST/v4/"
 cp "$SRC/v4/interfaces/IQuiverToken.sol" "$DST/v4/interfaces/"
+# HookDeployer lives under v4/test/ upstream but the production deploy needs it:
+# it is the CREATE2 deployer that places the hook at an address whose low bits
+# encode its V4 permission flags. Leaving it out made the whole deploy path fail
+# at step one, after the FeeSplitter had already been paid for.
+cp "$SRC/v4/test/HookDeployer.sol" "$DST/v4/test/"
 cp "$SRC/mocks/WETH9.sol" "$SRC/mocks/EthRejecter.sol" "$DST/mocks/"
 # The stack's own test fixture, so the suites here deploy the real contracts
 # rather than a local approximation of them. Its provenance header is restored

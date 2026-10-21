@@ -146,9 +146,11 @@ forbidden paths would be theatre.
 | `contracts/contracts/vendor/doubleplus/` | the DoublePlus venture stack, vendored so the Launcher is tested against the contracts it will actually meet. Re-sync with `contracts/scripts/sync-doubleplus.sh` |
 | `contracts/contracts/v4/SyndicateRegistry.sol` | who is a member, read live through the factory, so leaving stops the stream for every coin a launchpad ever opened |
 | `contracts/contracts/v4/AggregatorRouter.sol` | charges on volume routed through any pool, ours or anyone else's, and pays a member its share |
-| `contracts/scripts/deploy-launcher.ts` | reads a DoublePlus `tenant-<slug>-<chain>.json`, deploys a creator `FeeSplitter` and the `Launcher`, writes `launcher-<slug>-<chain>.json` |
+| `contracts/scripts/deploy-launcher.ts` | reads a `tenant-<slug>-<chain>.json`, deploys a creator `FeeSplitter` and the `Launcher`, writes `launcher-<slug>-<chain>.json` |
 | `contracts/scripts/deploy-tenant.ts` | a whole venture stack whose treasury is a tenant `FeeSplitter` |
 | `contracts/scripts/deploy-aggregator.ts` | the registry and the router that pays into it |
+| `contracts/scripts/preflight.ts` | every read-only check that has to pass before a deploy spends anything |
+| `contracts/scripts/verify-deployment.ts` | reads a deployment back off the chain and checks every immutable wire against its artifact |
 | `aggregator/src/indexer.ts` | every launchpad on every configured chain, ours and other people's |
 | `aggregator/src/saturation.ts` | how crowded each chain is, and how fast coins reach an open market |
 | `aggregator/public/terminal.html` | the terminal: every launchpad's coins in one feed, served by the aggregator |
@@ -178,25 +180,30 @@ forbidden paths would be theatre.
 | `aggregator` + its terminal | nothing yet: the router has no deployment to route to | the toll booth needs a road, and the road does not care who launched the coin |
 | `keeper` | nothing directly; it is what turns accrued fees into ETH | fees accrue in the coins they were charged in |
 
-The venture contracts these build on are deployed from the DoublePlus repo and
-vendored here read-only (`contracts/contracts/vendor/doubleplus/`,
-re-pinned by `contracts/scripts/sync-doubleplus.sh`, which also carries the
-stack's own test fixture so the suites here deploy the real contracts rather
-than an approximation of them). Anything that reads a venture deployment
-artifact takes its path from the environment rather than guessing a filename,
-because those artifacts are written by that repo and not by this one.
+The venture contracts these build on are written in the DoublePlus repo and
+vendored here read-only (`contracts/contracts/vendor/doubleplus/`, re-pinned by
+`contracts/scripts/sync-doubleplus.sh`, which also carries the stack's own test
+fixture so the suites here deploy the real contracts rather than an
+approximation of them). They are *deployed* from here, by
+`contracts/scripts/deploy-tenant.ts`. Anything that reads a deployment artifact
+takes its path from the environment rather than guessing a filename, because one
+chain can carry several stacks and a tool pointed at the wrong one is wrong
+silently.
+
+`DEPLOY.md` is the runbook: what is irreversible, the order, and what to check
+after each step.
 
 ## Deploying for a tenant
 
-A tenant first needs a venture stack, deployed from DoublePlus
-(`contracts/scripts/deploy-tenant.ts`). Then:
+A tenant first needs a venture stack (`contracts/scripts/deploy-tenant.ts`; see
+`DEPLOY.md`). Then:
 
 ```bash
 cd contracts
 RPC_URL=… CHAIN_ID=4663 PRIVATE_KEY=0x… \
-TENANT_DEPLOYMENT=../../DoublePlus/contracts/deployments/tenant-acme-4663.json \
+TENANT_DEPLOYMENT=deployments/tenant-acme-4663.json \
 OPERATOR=0x… PROTOCOL_BPS=1000 \
-npx hardhat run scripts/deploy-launcher.ts --network target
+npm run deploy:launcher
 ```
 
 This writes `contracts/deployments/launcher-acme-4663.json`, which carries both stacks' addresses
@@ -235,7 +242,7 @@ The rules come from [Abiogenesis](https://github.com/IlumCI/Abiogenesis), which 
 selection pressures keep producing novelty: frequency-dependent payoff (`--streams`), the poorest-first
 reaper (`--reap-poor`), one-point crossover (`--sex`) and an order-2 mutation model (`--learned-mut`).
 
-Our own copies are counted exactly. The rest of the market comes from the DoublePlus aggregator:
+Our own copies are counted exactly. The rest of the market comes from the `aggregator` service in this repo:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $LUCRE_API_TOKEN" \

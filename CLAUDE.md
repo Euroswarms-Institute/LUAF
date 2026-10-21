@@ -55,10 +55,38 @@ ones they will actually meet. Do not edit them in place — re-pin with
 `contracts/scripts/sync-doubleplus.sh [path-to-DoublePlus]`, which reads that
 tree and writes only into this one.
 
-Anything that needs a venture deployment artifact takes its path from the
-environment (`VENTURE_DEPLOYMENT`, `DEPLOYMENT_FILE`) rather than guessing a
-filename, because those artifacts are written by that repository and not by
-this one.
+Anything that needs a deployment artifact takes its path from the environment
+(`TENANT_DEPLOYMENT`, `VENTURE_DEPLOYMENT`, `DEPLOYMENT_FILE`) rather than
+guessing a filename from a chain id: one chain can carry several stacks, and a
+tool pointed at the wrong one is wrong silently.
+
+The deploy path is `DEPLOY.md` plus `contracts/scripts/`. Four of the addresses
+a deploy sets are immutable, so `preflight.ts` runs every check that can be made
+before gas is spent and `verify-deployment.ts` reads the result back off the
+chain afterwards. Rehearse against a forked node before touching a real one; the
+scripts detect a development node and mark the artifact `fork: true`.
+
+## Frozen: do not extend these
+
+Nothing here is deployed and nothing has earned a wei. Two parts of this repo
+are a year ahead of the business and are **frozen** — they work, they are
+tested, and they are not to be grown until there is real money to point them
+at.
+
+| Frozen | Why | Unfreezes when |
+| --- | --- | --- |
+| `core/src/selection.ts` and `core/src/persistent.ts` — the breeder | It optimises launch formats against fee income that has never been collected. You cannot breed against a number that does not exist. | Real fee income exists from launched coins |
+| `aggregator/public/terminal.html`, `service/public/console.html` | Three redesigns before a single person has used either | Somebody has actually used one and said what is wrong |
+| `service/src/tenants.ts` budgets and grants | An accounting system for tenants who do not exist | There is a second tenant |
+
+Frozen means: fix a bug, do not add a feature, and do not refactor for
+elegance. If a task seems to need one of these extended, that is a signal the
+task is premature — say so instead of building it.
+
+What is *not* frozen, because it is load-bearing before any money moves: the
+contracts (immutable once deployed, so they have to be right first), the deploy
+path and its preflight, and the aggregator's indexing (the router needs an index
+of other people's coins to be worth routing through).
 
 ## Commits
 

@@ -1,0 +1,211 @@
+# Deploying
+
+This is the order the stack goes up in, the variables each step reads, and what
+to check before moving on. It was rehearsed end to end against a fork of
+Robinhood Chain testnet (chain 46630) at block ~140.2M; every command below ran
+there and the output quoted is what it printed.
+
+## What cannot be undone
+
+Four decisions are permanent. None of them has a setter, and the factory
+renounces its own ownership as the last step of its deploy.
+
+| Decision | Set by | Consequence of getting it wrong |
+| --- | --- | --- |
+| `platformTreasury` in the hook | `deploy-tenant.ts`, as the tenant `FeeSplitter` | every trade fee on every graduated pool from this stack, forever, goes to that address |
+| `tenant` / `protocol` / `protocolBps` in a `FeeSplitter` | `deploy-tenant.ts` and `deploy-launcher.ts` | the split cannot be changed; the money arrives where the constructor said |
+| `admin` in `SyndicateRegistry` | `deploy-aggregator.ts` | only that address can ever admit or remove a launchpad |
+| `operator` in `Launcher` | `deploy-launcher.ts` | only that key can ever launch through it |
+
+Graduated liquidity is add-only and owned by the factory, so a coin launched on
+a misrouted stack cannot be moved to a correct one. The cost of a typo here is
+the whole future income of that stack, not a redeploy.
+
+Everything else — `graduationRaiseWei`, `creationFeeWei`, pause — is `setParams`
+on the factory and belongs to `ADMIN`.
+
+## Addresses you need before you start
+
+Decide these first and write them down; three of them are in the table above.
+
+- `ADMIN` — a long-lived key or multisig. It holds `setParams` on the factory
+  and, if you give it the same value there, `SyndicateRegistry.admin`. Do not
+  use the deployer key: it is hot, it signs twelve transactions during the
+  deploy, and it can never be rotated out of the registry.
+- `TENANT_TREASURY`, `PROTOCOL_TREASURY` — where the platform fee splits to.
+  Plain EOAs are simplest; a contract here must accept a bare ETH transfer or
+  every ETH-denominated fee to it reverts.
+- `OPERATOR` — the pipeline's hot wallet, the only address `Launcher.launch`
+  accepts. Fund it: it pays for each launch and its first buy.
+- `TREASURY` for the aggregator router — can be the same as
+  `PROTOCOL_TREASURY`.
+- `PRIVATE_KEY` — the deployer. Needs about 0.05 ETH of headroom; the factory
+  alone is at the contract size ceiling.
+
+## The chains
+
+```
+mainnet  RPC_URL=https://rpc.mainnet.chain.robinhood.com  CHAIN_ID=4663
+testnet  RPC_URL=https://rpc.testnet.chain.robinhood.com  CHAIN_ID=46630
+```
+
+Both are in `INFRA` in `contracts/scripts/lib/venture-stack.ts`, and both
+entries' PoolManager and WETH were checked against the live chains by
+`preflight` (testnet WETH `0x33e4…0B94`, mainnet WETH `0x0Bd7…AD73`; the V4
+PoolManager is at the same address on both). The testnet has no V3 router, so
+launches there are WETH-paired only.
+
+Everything runs with `--network target`, which is built from `RPC_URL`,
+`CHAIN_ID` and `PRIVATE_KEY`. There is no network named after a chain.
+
+## Rehearse it first
+
+A rehearsal is the same commands against a forked node, so the only thing that
+differs from the real run is who pays. Do this before every mainnet deploy, not
+only the first.
+
+```bash
+cd contracts
+FORK_URL=https://rpc.mainnet.chain.robinhood.com FORK_CHAIN_ID=4663 \
+  npx hardhat node --hostname 127.0.0.1 --port 8545
+```
+
+Then in another shell, with `RPC_URL=http://127.0.0.1:8545`, the deployer set to
+one of the node's printed keys, and `DEPLOYMENTS_DIR` pointed somewhere
+disposable, run steps 0–4 below exactly as written.
+
+The scripts detect a development node (`hardhat_metadata` / `anvil_nodeInfo`
+answer only there) and write `…​.fork.json` with `"fork": true`, so a
+rehearsal's addresses can never be picked up later as a deployment.
+
+## Step 0 — preflight
+
+```bash
+cd contracts
+RPC_URL=… CHAIN_ID=… PRIVATE_KEY=0x… \
+ADMIN=0x… TENANT_TREASURY=0x… PROTOCOL_TREASURY=0x… OPERATOR=0x… \
+PROTOCOL_BPS=1000 \
+npm run preflight
+```
+
+Read-only, costs nothing, and exits non-zero on anything that would make the
+deploy wrong: a `CHAIN_ID` that disagrees with the RPC, no signer, a deployer
+under 0.05 ETH, infrastructure with no code at the address, a WETH that is not
+an ERC-20, a zero or unparseable immutable, a bps outside its range. It warns
+where a choice is legal but probably not what you want — `ADMIN` equal to the
+deployer, a contract treasury, an unfunded operator.
+
+Do not proceed with failures. Warnings are yours to accept.
+
+## Step 1 — the tenant stack
+
+```bash
+TENANT_SLUG=acme \
+TENANT_TREASURY=0x… PROTOCOL_TREASURY=0x… PROTOCOL_BPS=1000 \
+ADMIN=0x… PLATFORM_FEE_BPS=55 REF_SHARE_BPS=2000 \
+MIN_TARGET_ETH=0.002 GRADUATION_RAISE_ETH=0.004 CREATION_FEE_ETH=0 \
+npm run deploy:tenant
+```
+
+Ten transactions, nine if `ADMIN` is not the deployer: the `FeeSplitter`, a
+CREATE2 deployer, the vesting deployer, the hook at a mined address (the V4 flag
+bits live in the address, so the salt is ground for), the token deployer, the
+factory, the router, `VentureUpdates`, `setParams`, and the ownership renounce.
+It writes `contracts/deployments/tenant-<slug>-<chainId>.json`.
+
+`MIN_TARGET_ETH` is immutable: it is the smallest raise the platform will ever
+finish on this stack. `GRADUATION_RAISE_ETH` and `CREATION_FEE_ETH` go in by
+`setParams`, which the script sends only when the deployer is `ADMIN`.
+Otherwise it prints the exact call for `ADMIN` to send, and **until that is sent
+the stack runs on the contract defaults — 4 ETH graduation — not on what you
+asked for**. `setParams` is gated on `protocolAdmin`, not on ownership, so
+renouncing does not close the door; the script's own printed
+`graduationRaiseWei:` line tells you which of the two is in effect.
+
+The last line of a good run is `factory ownership renounced`. If the run dies
+before it, the factory is still owned and the artifact may not describe it:
+re-read it with step 4 before using it for anything.
+
+## Step 2 — the launcher
+
+```bash
+TENANT_DEPLOYMENT=deployments/tenant-acme-4663.json \
+OPERATOR=0x… PROTOCOL_BPS=1000 \
+npm run deploy:launcher
+```
+
+A creator `FeeSplitter` and the `Launcher`, written to
+`launcher-<slug>-<chainId>.json`. The artifact also records the exact
+`QuiverToken` creation bytecode, because the pipeline mines a CREATE2 vanity
+salt against it for every launch: if it does not match the deployed token
+deployer's, every launch reverts on the vanity check. Step 4 checks it.
+
+## Step 3 — the aggregator
+
+```bash
+TREASURY=0x… ADMIN=0x… FEE_BPS=100 REBATE_BPS=3000 \
+npm run deploy:aggregator
+```
+
+`SyndicateRegistry` and `AggregatorRouter`, written to
+`aggregator-<chainId>.json`. `FEE_BPS` is capped at 100 (1%) in the contract.
+`REBATE_BPS` is the share of that fee a member launchpad is paid.
+
+The registry starts empty and pays nobody until it is populated:
+
+```
+registry.setFactory(<factory>, <beneficiary>)   // from ADMIN
+```
+
+Our own tenant factories go in it too — that is what makes the terminal's
+volume pay the stack that launched the coin.
+
+## Step 4 — verify
+
+```bash
+TENANT_DEPLOYMENT=deployments/tenant-acme-4663.json \
+LAUNCHER_DEPLOYMENT=deployments/launcher-acme-4663.json \
+AGGREGATOR_DEPLOYMENT=deployments/aggregator-4663.json \
+npm run verify:deployment
+```
+
+Reads all of it back off the chain and checks every wire against the artifact:
+the hook's treasury, launcher binding and fee bps; the factory's hook, pool
+manager, WETH, deployers, admin, `minTargetWei`, curve fees, vanity mark and
+that its ownership really is renounced; the router's factory and hook; both
+splitters' recipients and split; the `Launcher`'s operator and splitter; the
+recorded token bytecode; the registry's admin and the aggregator router's
+registry, treasury and fee.
+
+A successful deploy transaction says nothing about where the money is addressed.
+This does. It is pure reads, so run it against mainnet freely, and again any
+time an artifact is handed to something new.
+
+It was run against the venture stack already live on testnet 46630 (factory
+`0x60e0…963b`, three coins) and every wire matched, so the checks are known to
+hold against a real deployed stack and not only against a rehearsal's.
+
+## Then the off-chain half
+
+Nothing above earns anything on its own. In order:
+
+1. **Keeper.** Commit the stack's `tenant-<slug>-<chainId>.json` under
+   `contracts/deployments/` (addresses only, no secrets), set the repository
+   variable `KEEPER_DEPLOYMENT` to its path relative to `keeper/`, and add the
+   `VENTURE_KEEPER_PK` secret for a funded keeper wallet. Without both,
+   `.github/workflows/keeper.yml` skips every run and says so. It then converts
+   fee income to ETH on the regime's schedule, services the splitter, and
+   registers graduations with the registry — a registry nobody populates pays
+   nobody.
+2. **Aggregator.** Add the new factory to `aggregator/sources.json` as a
+   `venture` source with the artifact's `startBlock`, then run the indexer.
+   `sources.testnet.json` is a working example.
+3. **Service.** Point `LUCRE_LAUNCHER_DEPLOYMENT` at the launcher artifact and
+   give the tenant a grant in `LUCRE_TENANTS_FILE`. A grant with no signing
+   token is a dry run, which is the right first state.
+
+## Known decision, not yet made
+
+The aggregator's premise was that Robinhood Chain had no trading terminal. Axiom
+and GMGN both arrived in July 2026. Which chain goes first is a business call
+and is not settled in this repository.

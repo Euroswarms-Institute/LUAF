@@ -1,17 +1,18 @@
 import { ethers, network } from "hardhat";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
+import { deploymentsDir, forkFilename, isLocalNode } from "./lib/venture-stack";
 
 // Deploy the pipeline's Launcher for one tenant: a creator FeeSplitter
 // (tenant / protocol, PROTOCOL_BPS) and a Launcher that names it as the
 // destination of every coin's creator income.
 //
 //   RPC_URL=… CHAIN_ID=4663 PRIVATE_KEY=0x… \
-//   TENANT_DEPLOYMENT=../../DoublePlus/contracts/deployments/tenant-acme-4663.json \
+//   TENANT_DEPLOYMENT=deployments/tenant-acme-4663.json \
 //   OPERATOR=0x… npx hardhat run scripts/deploy-launcher.ts --network target
 //
 // Env:
-//   TENANT_DEPLOYMENT  the DoublePlus tenant deployment JSON (deploy-tenant.ts)
+//   TENANT_DEPLOYMENT  the tenant deployment JSON written by deploy-tenant.ts
 //   OPERATOR           the pipeline's hot wallet, the only address that may launch
 //   PROTOCOL_BPS       protocol share of creator income (default 1000 = 10%)
 //   TENANT_TREASURY / PROTOCOL_TREASURY  override the tenant JSON's recipients
@@ -42,8 +43,10 @@ async function main() {
   // mine against a bytecode the chain does not agree with.
   const tokenBytecode = (await ethers.getContractFactory("QuiverToken")).bytecode;
 
+  const onFork = await isLocalNode();
   const out = {
     chainId,
+    ...(onFork ? { fork: true, note: "deployed against a local node; these addresses are not real" } : {}),
     tenant: dep.tenant.slug,
     tenantDeployment: depPath,
     operator,
@@ -63,11 +66,12 @@ async function main() {
     vanity: dep.vanity,
     tokenBytecode,
   };
-  const dir = join(__dirname, "../deployments");
+  const dir = deploymentsDir(false);
   mkdirSync(dir, { recursive: true });
-  const file = `launcher-${dep.tenant.slug}-${chainId}.json`;
+  const base = `launcher-${dep.tenant.slug}-${chainId}.json`;
+  const file = onFork ? forkFilename(base) : base;
   writeFileSync(join(dir, file), JSON.stringify(out, null, 2));
   console.log(`launcher: ${out.contracts.launcher}  creatorSplitter: ${out.contracts.creatorSplitter}`);
-  console.log(`saved deployments/${file}`);
+  console.log(`saved ${join(dir, file)}`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

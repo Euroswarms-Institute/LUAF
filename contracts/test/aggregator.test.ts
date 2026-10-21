@@ -246,7 +246,7 @@ describe("AggregatorRouter", function () {
 
   it("has no admin: the treasury and the rate are immutable", async () => {
     const { router } = await setup();
-    const fns = router.interface.fragments.filter((f) => f.type === "function").map((f) => (f as { name: string }).name);
+    const fns = router.interface.fragments.filter((f) => f.type === "function").map((f) => (f as unknown as { name: string }).name);
     for (const forbidden of ["setTreasury", "setFeeBps", "withdraw", "rescue", "owner", "transferOwnership"]) {
       expect(fns).to.not.include(forbidden);
     }

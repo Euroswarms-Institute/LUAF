@@ -29,6 +29,11 @@ jobs:
           node-version: "20"
       - run: npm install --no-audit --no-fund
       - run: npm run compile -w contracts
+      # The deploy and preflight scripts are TypeScript that no other job
+      # compiles: `npm run build` covers the service workspaces only, and
+      # `hardhat compile` is Solidity. Without this, a broken deploy script is
+      # found by running a deploy.
+      - run: npm run typecheck -w contracts
       - run: npm run test -w contracts
 
   typescript:

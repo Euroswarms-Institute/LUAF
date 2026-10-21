@@ -8,7 +8,7 @@ import { deployVentureStack, INFRA } from "./lib/venture-stack";
 // The factory and hook are the unmodified venture contracts.
 //
 //   TENANT_SLUG=acme TENANT_TREASURY=0x... PROTOCOL_TREASURY=0x... \
-//     npx hardhat run scripts/deploy-tenant.ts --network robinhood
+//     npx hardhat run scripts/deploy-tenant.ts --network target
 //
 // Env (in addition to everything scripts/lib/venture-stack.ts reads):
 //   TENANT_SLUG        brand id, [a-z0-9-]; names deployments/tenant-<slug>-<chainId>.json

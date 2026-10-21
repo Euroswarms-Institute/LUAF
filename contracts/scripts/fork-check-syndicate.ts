@@ -8,23 +8,22 @@ import { join } from "path";
 // This admits the real factory, registers a coin it actually launched, reads
 // the beneficiary back through it, and checks that removal stops the stream.
 //
-//   ROBINHOOD_RPC_URL=https://rpc.testnet.chain.robinhood.com \
-//   ROBINHOOD_CHAIN_ID=46630 FORK_HARDFORK=cancun \
-//   VENTURE_DEPLOYMENT=../DoublePlus/contracts/deployments/venture-testnet.json \
+//   FORK_URL=https://rpc.testnet.chain.robinhood.com FORK_CHAIN_ID=46630 \
+//   VENTURE_DEPLOYMENT=deployments/tenant-acme-46630.json \
 //   npm run fork:syndicate
 //
-// The deployment artifact is written by the venture deploy, which lives in the
-// DoublePlus repo, so its path is given rather than assumed: this repo holds
-// the registry, not the stack it is proved against.
+// The deployment artifact is written by deploy-tenant.ts. Its path is given
+// rather than assumed, because one chain can carry several stacks and this
+// check is only meaningful against the one whose factory is being admitted.
 //
 // Needs no key and spends nothing: everything happens on a local fork.
 async function main() {
   const file = process.env.VENTURE_DEPLOYMENT?.trim();
   if (!file) {
     throw new Error(
-      "set VENTURE_DEPLOYMENT to a venture deployment JSON (e.g. a DoublePlus " +
-        "contracts/deployments/venture-<name>.json): this fork check proves the registry " +
-        "against a stack that is already deployed",
+      "set VENTURE_DEPLOYMENT to a deployment JSON (e.g. " +
+        "contracts/deployments/tenant-<slug>-<chainId>.json): this fork check proves the " +
+        "registry against a stack that is already deployed",
     );
   }
   const dep = JSON.parse(readFileSync(file.startsWith("/") ? file : join(process.cwd(), file), "utf8"));

@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "compile": "hardhat compile",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy-launcher.ts",
-    "deploy:tenant": "hardhat run scripts/deploy-tenant.ts",
-    "deploy:aggregator": "hardhat run scripts/deploy-aggregator.ts",
-    "fork:syndicate": "FORK=1 hardhat run scripts/fork-check-syndicate.ts"
+    "preflight": "hardhat run scripts/preflight.ts --network target",
+    "deploy:tenant": "hardhat run scripts/deploy-tenant.ts --network target",
+    "deploy:launcher": "hardhat run scripts/deploy-launcher.ts --network target",
+    "deploy:aggregator": "hardhat run scripts/deploy-aggregator.ts --network target",
+    "verify:deployment": "hardhat run scripts/verify-deployment.ts --network target",
+    "fork:syndicate": "hardhat run scripts/fork-check-syndicate.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

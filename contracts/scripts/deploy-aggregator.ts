@@ -2,6 +2,8 @@ import { ethers, network } from "hardhat";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
+import { deploymentsDir, forkFilename, isLocalNode } from "./lib/venture-stack";
+
 // The shared channel: the syndicate registry and the router that pays into it.
 //
 // AggregatorRouter charges on volume routed through any pool, ours or anyone
@@ -13,7 +15,7 @@ import { join } from "path";
 // model previously only claimed to have.
 //
 //   RPC_URL=… CHAIN_ID=4663 PRIVATE_KEY=0x… \
-//   TREASURY=0x… npx hardhat run scripts/deploy-aggregator.ts --network robinhood
+//   TREASURY=0x… npx hardhat run scripts/deploy-aggregator.ts --network target
 //
 // Env:
 //   TREASURY      where the router's own share of the fee goes (required)
@@ -38,10 +40,10 @@ const INFRA: Record<number, { poolManager: string; weth: string; v3Router: strin
 
 async function main() {
   const chainId = Number((await ethers.provider.getNetwork()).chainId);
-  // A fork reports the forked chain's id while running in-process, so a deploy
-  // run against one would otherwise write an artifact that looks like the real
-  // thing and names addresses that exist nowhere. Mark it instead.
-  const onFork = network.name === "hardhat" || network.name === "localhost";
+  // A fork reports the forked chain's id, so a deploy run against one would
+  // otherwise write an artifact that looks like the real thing and names
+  // addresses that exist nowhere. Mark it instead.
+  const onFork = await isLocalNode();
   const infra = INFRA[chainId];
   const poolManager = process.env.POOL_MANAGER ?? infra?.poolManager;
   const weth = process.env.WETH ?? infra?.weth;
@@ -84,15 +86,18 @@ async function main() {
       v3Router,
     },
   };
-  mkdirSync(join(__dirname, "../deployments"), { recursive: true });
-  const file = onFork ? `aggregator-${chainId}.fork.json` : `aggregator-${chainId}.json`;
+  const dir = deploymentsDir(false);
+  mkdirSync(dir, { recursive: true });
+  const file = onFork ? forkFilename(`aggregator-${chainId}.json`) : `aggregator-${chainId}.json`;
   if (onFork) {
-    console.log(`\n*** ${network.name} network: this is a rehearsal. The addresses below exist only in`);
-    console.log(`*** this process. Saving as ${file} so it cannot be mistaken for a deployment.`);
+    console.log(`\n*** The RPC is a local development node, so this is a rehearsal. The`);
+    console.log(`*** addresses above exist only on it. Saving as ${file}.`);
   }
-  writeFileSync(join(__dirname, `../deployments/${file}`), JSON.stringify(out, null, 2));
+  // join(dir, …), not join(__dirname, …): the second ignored DEPLOYMENTS_DIR
+  // and wrote a rehearsal's addresses into the repository anyway.
+  writeFileSync(join(dir, file), JSON.stringify(out, null, 2));
   console.log(`registry: ${out.contracts.registry}  router: ${out.contracts.router}`);
-  console.log(`saved deployments/${file}  startBlock: ${startBlock}`);
+  console.log(`saved ${join(dir, file)}  startBlock: ${startBlock}`);
   console.log(`\nAdmit a launchpad with: registry.setFactory(<factory>, <beneficiary>)`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

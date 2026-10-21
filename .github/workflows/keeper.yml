@@ -20,10 +20,10 @@ name: Treasury keeper
 #   VENTURE_KEEPER_PK                    secret: the keeper wallet, funded for gas
 #   contracts/deployments/<file>.json    the stack's addresses
 #
-# Those deployment artifacts are written by the venture deploy, which lives in
-# the DoublePlus repository. They hold addresses and no secrets, so the file for
-# whichever stack this keeper services belongs here, committed, and
-# KEEPER_DEPLOYMENT names it.
+# Those deployment artifacts are written by contracts/scripts/deploy-tenant.ts.
+# They hold addresses and no secrets, so the file for whichever stack this keeper
+# services belongs committed under contracts/deployments/, with
+# KEEPER_DEPLOYMENT naming it.
 on:
   schedule:
     # Every 6 hours, off the hour: a job scheduled on the hour queues behind
@@ -71,9 +71,9 @@ jobs:
           fi
           if [ -z "$DEPLOYMENT_FILE" ]; then
             echo "The KEEPER_DEPLOYMENT variable is not set."
-            echo "Commit the stack's deployment JSON (written by the venture deploy in the"
-            echo "DoublePlus repo -- addresses only, no secrets) under contracts/deployments/,"
-            echo "then set KEEPER_DEPLOYMENT to its path relative to keeper/."
+            echo "Commit the stack's deployment JSON (written by deploy-tenant.ts --"
+            echo "addresses only, no secrets) under contracts/deployments/, then set"
+            echo "KEEPER_DEPLOYMENT to its path relative to keeper/."
             exit 0
           fi
           if [ ! -f "keeper/$DEPLOYMENT_FILE" ] && [ ! -f "$DEPLOYMENT_FILE" ]; then

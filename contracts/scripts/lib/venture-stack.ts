@@ -1,14 +1,18 @@
 import { ethers, network } from "hardhat";
 import { writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join, resolve } from "path";
 
 // Venture launchpad stack deploy, shared by scripts/deploy-venture.ts (the
 // doubleplus stack) and scripts/deploy-tenant.ts (a tenant stack whose
-// treasury is a FeeSplitter). Serves both Robinhood Chain
-// networks through the env-driven `robinhood` network entry:
+// treasury is a FeeSplitter). Both chains are served by the one env-driven
+// `target` network in hardhat.config.ts:
 //
-//   mainnet: ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com ROBINHOOD_CHAIN_ID=4663
-//   testnet: ROBINHOOD_RPC_URL=https://rpc.testnet.chain.robinhood.com ROBINHOOD_CHAIN_ID=46630
+//   mainnet: RPC_URL=https://rpc.mainnet.chain.robinhood.com CHAIN_ID=4663
+//   testnet: RPC_URL=https://rpc.testnet.chain.robinhood.com CHAIN_ID=46630
+//
+// Run everything with `--network target`. There is no `robinhood` network;
+// this comment used to say there was, which made the first documented command
+// of a deploy fail.
 //
 // Env:
 //   ADMIN            protocolAdmin: pause/resume and setParams only; it has no
@@ -29,6 +33,45 @@ import { join } from "path";
 // The V4 PoolManager sits at the same address on both networks. WETH differs;
 // the testnet has no self-deployed V3 stack, so venture launches there are
 // WETH-paired only (v3Router = zero, never called for WETH pairs).
+/** Where deployment artifacts are written.
+ *
+ *  Overridable so a rehearsal on a fork does not leave invented addresses in
+ *  contracts/deployments/ to be mistaken later for a real deploy. Set
+ *  DEPLOYMENTS_DIR to somewhere disposable when rehearsing. */
+export function deploymentsDir(fromScriptsLib: boolean): string {
+  const override = process.env.DEPLOYMENTS_DIR?.trim();
+  if (override) return isAbsolute(override) ? override : resolve(process.cwd(), override);
+  return join(__dirname, fromScriptsLib ? "../../deployments" : "../deployments");
+}
+
+/** True when the RPC on the other end is a local development node (hardhat or
+ *  anvil), forked or not.
+ *
+ *  A deploy is rehearsed against such a node over HTTP with `--network
+ *  target`, and from inside a script that is indistinguishable from the real
+ *  chain: a fork answers with the forked chain's id, the real infrastructure
+ *  code really is at the real addresses, and the artifact that comes out names
+ *  addresses that exist nowhere. Checking the network's *name* does not catch
+ *  it. These two methods exist only on a development node, so one of them
+ *  answering settles it. */
+export async function isLocalNode(): Promise<boolean> {
+  for (const method of ["hardhat_metadata", "anvil_nodeInfo"]) {
+    try {
+      await ethers.provider.send(method, []);
+      return true;
+    } catch {
+      // A real node rejects the method. Try the other one.
+    }
+  }
+  return network.name === "hardhat" || network.name === "localhost";
+}
+
+/** `name.json` -> `name.fork.json`, so a rehearsal's artifact can never be
+ *  picked up later as a deployment. */
+export function forkFilename(file: string): string {
+  return file.replace(/\.json$/, "") + ".fork.json";
+}
+
 export const INFRA: Record<number, { poolManager: string; weth: string; v3Router: string; file: string }> = {
   4663: {
     poolManager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
@@ -171,8 +214,10 @@ export async function deployVentureStack(opts: StackOptions = {}) {
   console.log("factory ownership renounced (hook has no owner by construction)");
 
   const startBlock = await ethers.provider.getBlockNumber();
+  const onLocal = await isLocalNode();
   const out = {
     chainId,
+    ...(onLocal ? { fork: true, note: "deployed against a local node; these addresses are not real" } : {}),
     ...opts.extra,
     admin,
     treasury,
@@ -197,9 +242,14 @@ export async function deployVentureStack(opts: StackOptions = {}) {
       v3Router: infra.v3Router,
     },
   };
-  const file = opts.file ?? infra.file;
-  mkdirSync(join(__dirname, "../../deployments"), { recursive: true });
-  writeFileSync(join(__dirname, `../../deployments/${file}`), JSON.stringify(out, null, 2));
-  console.log(`saved deployments/${file}  startBlock:`, startBlock);
+  const file = onLocal ? forkFilename(opts.file ?? infra.file) : (opts.file ?? infra.file);
+  if (onLocal) {
+    console.log(`\n*** The RPC is a local development node, so this is a rehearsal: the`);
+    console.log(`*** addresses above exist only on it. Saving as ${file}.`);
+  }
+  const dir = deploymentsDir(true);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, file), JSON.stringify(out, null, 2));
+  console.log(`saved ${join(dir, file)}  startBlock:`, startBlock);
   return out;
 }
