@@ -16,6 +16,7 @@ import { dirname } from "node:path";
 
 import type { LauncherDeployment, LlmConfig, RunConfig } from "./config.js";
 import { collectIncome, bySpec } from "./income.js";
+import { loadRivals } from "./rivals.js";
 import { runOnce, type PipelineResult } from "./pipeline.js";
 import {
   applyIncome,
@@ -46,6 +47,9 @@ export interface PersistentRequest {
   epochEvery?: number;
   /** Where the population is kept between runs. */
   populationPath?: string;
+  /** The aggregator's base URL. Without it, selection sees only our own
+   *  copies of a format and so understates how crowded the market is. */
+  aggregatorUrl?: string;
   selection?: SelectionConfig;
   log?: (line: string) => void;
   signal?: AbortSignal;
@@ -104,6 +108,18 @@ export async function runPersistent(req: PersistentRequest): Promise<PersistentR
     return total;
   };
 
+  /** Refresh how crowded the market is, so fitness divides by the real copy
+   *  count rather than only by ours. */
+  const refreshRivals = async (): Promise<void> => {
+    const { rivals, source, note } = await loadRivals(req.aggregatorUrl, pop.members);
+    if (source === "aggregator") {
+      pop = { ...pop, rivals };
+      log(`rivals: ${Object.values(rivals).reduce((a, b) => Math.max(a, b), 0)} competing launches on this chain`);
+    } else if (note) {
+      log(`rivals: ${note}`);
+    }
+  };
+
   while (launches < req.maxLaunches) {
     if (req.signal?.aborted) {
       stopped = "aborted";
@@ -143,6 +159,7 @@ export async function runPersistent(req: PersistentRequest): Promise<PersistentR
 
     incomeEthWei = await measure();
     log(`income so far: ${incomeEthWei} wei`);
+    await refreshRivals();
     if (req.targetEthWei > 0n && incomeEthWei >= req.targetEthWei) {
       stopped = "target";
       break;

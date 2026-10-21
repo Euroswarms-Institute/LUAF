@@ -44,6 +44,7 @@ const FLAG_ENV: Record<string, string> = {
   "--target-eth": "LUAF_TARGET_ETH",
   "--max-launches": "LUAF_MAX_LAUNCHES",
   "--population": "LUAF_POPULATION",
+  "--aggregator": "LUAF_AGGREGATOR_URL",
 };
 
 interface Args {
@@ -271,6 +272,7 @@ async function cmdPersistent(): Promise<void> {
     targetEthWei: parseEth(env("LUAF_TARGET_ETH"), 10n ** 18n),
     maxLaunches: Number(env("LUAF_MAX_LAUNCHES", "10")),
     populationPath: env("LUAF_POPULATION", "runs/population.json"),
+    aggregatorUrl: env("LUAF_AGGREGATOR_URL"),
     log: (l) => console.log(l),
   });
   console.log("\n--- done");
@@ -340,6 +342,7 @@ Common flags (each sets the matching environment variable):
   --eth-usd <dollars>  --first-buy <eth>      --min-lines <n>
   --max-steps <n>      --out-dir <path>       --model <id>
   --target-eth <eth>   --max-launches <n>     --population <path>
+  --aggregator <url>
   --dry-run | --no-dry-run
 
 Nothing is signed unless --no-dry-run is passed. A dry run still simulates every

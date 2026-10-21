@@ -7,6 +7,7 @@ export * from "./pipeline.js";
 export * from "./persistent.js";
 export * from "./profiles.js";
 export * from "./research.js";
+export * from "./rivals.js";
 export * from "./selection.js";
 export * from "./spec.js";
 export * from "./validate.js";

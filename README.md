@@ -108,6 +108,19 @@ The rules come from [Abiogenesis](https://github.com/IlumCI/Abiogenesis), which 
 selection pressures keep producing novelty: frequency-dependent payoff (`--streams`), the poorest-first
 reaper (`--reap-poor`), one-point crossover (`--sex`) and an order-2 mutation model (`--learned-mut`).
 
+Our own copies are counted exactly. The rest of the market comes from the DoublePlus aggregator:
+
+```bash
+npx luaf persistent --aggregator http://localhost:8081
+```
+
+Without it the loop sees only our own launches, which is right where we are the only launchpad on a
+chain and too optimistic anywhere else. With it, the count is per **chain**, not per format — a
+third-party coin's terms are not in its launch event, so nobody can say which of our formats it
+copies. That projection overstates competition on purpose, so the loop retreats from a crowded chain
+early rather than finding out by losing money there. Our own copies are subtracted first, so a
+launch is never counted twice.
+
 The brief is deliberately **not** part of the format. Breeding carries the terms forward — taxes,
 buckets, dividend policy, opening buy, profile — and each launch finds its own subject.
 
