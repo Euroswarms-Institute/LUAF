@@ -1,0 +1,1 @@
+Product focus: Tokenized units only; revenue via API usage, token fees, data/arbitrage/sellable output—not via products that need a web frontend (no subscription UI, dashboard, or SaaS customer-facing app).

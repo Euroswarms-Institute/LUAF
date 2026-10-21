@@ -178,7 +178,7 @@ RAG_DDG_PER_HOP = _env_int('LUAF_RAG_DDG_PER_HOP', 15, lo=1, hi=50)
 USE_KEYLESS_API_SEARCH = _env_bool('LUAF_KEYLESS_API_SEARCH', '1')
 USE_RUN_IN_NEW_TERMINAL = _env_bool('LUAF_RUN_IN_NEW_TERMINAL', '1')
 USE_GENERATE_AGENT_IMAGE = _env_bool('LUAF_GENERATE_AGENT_IMAGE', '0')
-SWARMS_API_KEY_FALLBACK = 'sk-2ca8ca93580702aff03e1991da20aa364d9e3d4e11fffd14c651145a2226d012'
+SWARMS_API_KEY_FALLBACK = ''  # was a live key committed in source; removed. Set SWARMS_API_KEY.
 AGENTS_REGISTRY_PATH = Path(__file__).resolve().parent / 'tokenized_agents.json'
 RAPID_AGENTS_REGISTRY_PATH = Path(__file__).resolve().parent / 'rapidapi_agents.json'
 _RAPIDAPI_DESIGNER_SUFFIX_PATH = _LUAF_ASSETS_DIR / 'designer_rapidapi_suffix.txt'

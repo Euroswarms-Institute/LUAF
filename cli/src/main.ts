@@ -1,0 +1,380 @@
+#!/usr/bin/env node
+/** The foundry's command line.
+ *
+ *  `init` writes a .env to fill in, `doctor` checks that everything the
+ *  pipeline needs is reachable, `run` does one launch, `persistent` loops under
+ *  selection, `income` reports what past launches earned, and `profiles` lists
+ *  the designer profiles. Every flag maps to an environment variable, as the
+ *  Python CLI did, so a flag and a .env entry are interchangeable. */
+
+import { existsSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import {
+  baseSpec,
+  bySpec,
+  collectIncome,
+  listProfiles,
+  loadLauncherDeployment,
+  loadProfile,
+  llmConfig,
+  runConfig,
+  runOnce,
+  runPersistent,
+  search,
+  formatKey,
+  type LaunchSpec,
+} from "@luaf/core";
+
+/** Flags that set an environment variable, so .env and the command line are
+ *  the same surface. Mirrors the Python CLI's `_apply_cli_config`. */
+const FLAG_ENV: Record<string, string> = {
+  "--tenant": "LUAF_TENANT",
+  "--chain-id": "LUAF_CHAIN_ID",
+  "--deployment": "LUAF_LAUNCHER_DEPLOYMENT",
+  "--rpc-url": "LUAF_RPC_URL",
+  "--profile": "LUAF_PROFILE",
+  "--topic": "LUAF_TOPIC",
+  "--model": "LUAF_MODEL",
+  "--min-lines": "LUAF_MIN_LINES",
+  "--max-steps": "LUAF_MAX_STEPS",
+  "--out-dir": "LUAF_OUT_DIR",
+  "--eth-usd": "LUAF_ETH_USD",
+  "--first-buy": "LUAF_FIRST_BUY_ETH",
+  "--target-eth": "LUAF_TARGET_ETH",
+  "--max-launches": "LUAF_MAX_LAUNCHES",
+  "--population": "LUAF_POPULATION",
+};
+
+interface Args {
+  command: string;
+  flags: Set<string>;
+}
+
+function parseArgs(argv: string[]): Args {
+  const command = argv[0] ?? "help";
+  const flags = new Set<string>();
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (!a.startsWith("--")) continue;
+    const [name, inline] = a.includes("=") ? [a.slice(0, a.indexOf("=")), a.slice(a.indexOf("=") + 1)] : [a, undefined];
+    const env = FLAG_ENV[name];
+    if (env) {
+      const value = inline ?? argv[++i];
+      if (value === undefined) fail(`${name} needs a value`);
+      process.env[env] = value;
+      continue;
+    }
+    flags.add(name);
+  }
+  // Boolean flags, resolved after the loop so --no-dry-run always wins.
+  if (flags.has("--dry-run")) process.env.LUAF_DRY_RUN = "1";
+  if (flags.has("--no-dry-run")) process.env.LUAF_DRY_RUN = "0";
+  return { command, flags };
+}
+
+function fail(msg: string): never {
+  console.error(msg);
+  process.exit(1);
+}
+
+function env(name: string, fallback?: string): string | undefined {
+  const v = process.env[name]?.trim();
+  return v === "" || v === undefined ? fallback : v;
+}
+
+/** ETH/USD with 8 decimals. Supplied rather than fetched: it sizes the curve's
+ *  start price, the factory checks it against its deployed band, and a wrong
+ *  automatic value would open a curve at the wrong price. */
+function ethUsd8(): bigint {
+  const v = env("LUAF_ETH_USD");
+  if (!v) fail("set --eth-usd (or LUAF_ETH_USD), e.g. --eth-usd 2500");
+  if (!/^\d+(\.\d{1,8})?$/.test(v)) fail(`--eth-usd ${v}: expected a dollar amount like 2500`);
+  const [whole = "0", frac = ""] = v.split(".");
+  return BigInt(whole) * 10n ** 8n + BigInt(frac.padEnd(8, "0"));
+}
+
+function parseEth(v: string | undefined, fallback = 0n): bigint {
+  if (!v) return fallback;
+  if (!/^\d+(\.\d{1,18})?$/.test(v)) fail(`expected an ETH amount like 0.01, got ${v}`);
+  const [whole = "0", frac = ""] = v.split(".");
+  return BigInt(whole) * 10n ** 18n + BigInt(frac.padEnd(18, "0"));
+}
+
+function specFromEnv(tenant: string, chainId: number): LaunchSpec {
+  return baseSpec({
+    profile: env("LUAF_PROFILE", "crypto")!,
+    topic: env("LUAF_TOPIC", "")!,
+    tenant,
+    chainId,
+    firstBuyWei: parseEth(env("LUAF_FIRST_BUY_ETH")),
+  });
+}
+
+const ENV_TEMPLATE = `# The foundry's configuration. Every value here can also be passed as a flag.
+
+# --- the model -------------------------------------------------------------
+# An OpenAI-compatible endpoint. Never commit a real key.
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+LUAF_MODEL=gpt-5.1
+
+# --- what to launch into ---------------------------------------------------
+# The tenant slug and chain pick contracts/deployments/launcher-<tenant>-<chain>.json
+LUAF_TENANT=
+LUAF_CHAIN_ID=46630
+LUAF_RPC_URL=https://rpc.testnet.chain.robinhood.com
+
+# --- signing ---------------------------------------------------------------
+# Dry run simulates every launch against the real factory and signs nothing.
+LUAF_DRY_RUN=1
+# The operator wallet. Only read when LUAF_DRY_RUN=0.
+LUAF_PRIVATE_KEY=
+
+# --- the design ------------------------------------------------------------
+LUAF_PROFILE=crypto
+# Leave the topic blank to have one generated from the profile.
+LUAF_TOPIC=
+LUAF_MIN_LINES=400
+LUAF_MAX_STEPS=3
+LUAF_OUT_DIR=runs
+
+# --- launch terms ----------------------------------------------------------
+# ETH/USD in dollars. It sizes the curve's start price and must sit inside the
+# band the factory was deployed with.
+LUAF_ETH_USD=
+# The operator's opening buy. Clamped to the factory's launch-window cap.
+LUAF_FIRST_BUY_ETH=0
+
+# --- the loop --------------------------------------------------------------
+LUAF_TARGET_ETH=1
+LUAF_MAX_LAUNCHES=10
+LUAF_POPULATION=runs/population.json
+
+# --- the paid endpoint -----------------------------------------------------
+# Defaults to 0.01 USDC on Base, paid to the creator splitter.
+X402_PRICE_ATOMIC=10000
+X402_NETWORK=base
+X402_ASSET=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+X402_FACILITATOR=https://x402.org/facilitator
+`;
+
+function cmdInit(): void {
+  const path = resolve(process.cwd(), ".env");
+  if (existsSync(path)) {
+    console.log(`.env already exists at ${path}; leaving it alone`);
+    return;
+  }
+  writeFileSync(path, ENV_TEMPLATE, "utf8");
+  console.log(`wrote ${path}`);
+  console.log("Fill in OPENAI_API_KEY, LUAF_TENANT and LUAF_ETH_USD, then run: luaf doctor");
+}
+
+async function cmdDoctor(): Promise<void> {
+  let bad = 0;
+  const ok = (label: string, detail = "") => console.log(`  ok    ${label}${detail ? `  ${detail}` : ""}`);
+  const no = (label: string, why: string) => {
+    bad++;
+    console.log(`  FAIL  ${label}  ${why}`);
+  };
+
+  console.log("model");
+  try {
+    const cfg = llmConfig();
+    ok("config", `${cfg.model} at ${cfg.baseUrl}`);
+    const res = await fetch(`${cfg.baseUrl}/models`, {
+      headers: { authorization: `Bearer ${cfg.apiKey}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.ok) ok("endpoint reachable");
+    else no("endpoint", `HTTP ${res.status}`);
+  } catch (e) {
+    no("config", (e as Error).message);
+  }
+
+  console.log("profiles");
+  try {
+    const profiles = listProfiles();
+    ok("found", `${profiles.length} profiles`);
+    const want = env("LUAF_PROFILE", "crypto")!;
+    loadProfile(want);
+    ok("selected", want);
+  } catch (e) {
+    no("profiles", (e as Error).message);
+  }
+
+  console.log("research");
+  const snippets = await search("autonomous agent revenue", { maxResults: 3 });
+  if (snippets.length) ok("search", `${snippets.length} results`);
+  else console.log("  warn  search returned nothing; runs will design without context");
+
+  console.log("chain");
+  try {
+    const run = runConfig();
+    ok("run config", run.dryRun ? "dry run" : "LIVE: launches will be signed");
+    const dep = loadLauncherDeployment();
+    ok("deployment", `tenant ${dep.tenant} on chain ${dep.chainId}`);
+    ok("launcher", dep.contracts.launcher);
+    ok("factory", dep.contracts.factory);
+    const res = await fetch(run.rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const json = (await res.json()) as { result?: string };
+    const served = json.result ? Number(BigInt(json.result)) : 0;
+    if (served === dep.chainId) ok("rpc", `chain ${served}`);
+    else no("rpc", `serves chain ${served}, the deployment is for ${dep.chainId}`);
+  } catch (e) {
+    no("chain", (e as Error).message);
+  }
+
+  console.log(bad === 0 ? "\nall checks passed" : `\n${bad} check(s) failed`);
+  if (bad) process.exit(1);
+}
+
+async function cmdRun(args: Args): Promise<void> {
+  const run = runConfig();
+  const dep = loadLauncherDeployment();
+  const spec = specFromEnv(dep.tenant, dep.chainId);
+  const result = await runOnce({
+    spec,
+    dep,
+    llm: llmConfig(),
+    run,
+    ethUsd8: args.flags.has("--design-only") ? 0n : ethUsd8(),
+    designOnly: args.flags.has("--design-only"),
+    log: (l) => console.log(l),
+  });
+  console.log("\n--- done");
+  console.log(`agent:   ${result.product.name} (${result.product.ticker}), ${result.lines} lines`);
+  console.log(`spec:    ${result.specId}`);
+  if (result.publish) {
+    console.log(`coin:    ${result.publish.token}${result.publish.dryRun ? " (dry run, nothing signed)" : ""}`);
+    if (result.publish.txHash) console.log(`tx:      ${result.publish.txHash}`);
+  }
+  console.log(`bundle:  ${result.bundle?.dir}`);
+  console.log(`run dir: ${result.dir}`);
+}
+
+async function cmdPersistent(): Promise<void> {
+  const run = runConfig();
+  const dep = loadLauncherDeployment();
+  const seed = specFromEnv(dep.tenant, dep.chainId);
+  const result = await runPersistent({
+    seed,
+    dep,
+    llm: llmConfig(),
+    run,
+    ethUsd8: ethUsd8(),
+    targetEthWei: parseEth(env("LUAF_TARGET_ETH"), 10n ** 18n),
+    maxLaunches: Number(env("LUAF_MAX_LAUNCHES", "10")),
+    populationPath: env("LUAF_POPULATION", "runs/population.json"),
+    log: (l) => console.log(l),
+  });
+  console.log("\n--- done");
+  console.log(`stopped:  ${result.stopped}`);
+  console.log(`launches: ${result.launches} (${result.failures} failed), ${result.epochs} epochs`);
+  console.log(`income:   ${result.incomeEthWei} wei`);
+  console.log(`specs:    ${result.population.members.length} alive`);
+}
+
+async function cmdIncome(): Promise<void> {
+  const run = runConfig();
+  const dep = loadLauncherDeployment();
+  const rows = await collectIncome(dep, run.rpcUrl);
+  if (rows.length === 0) {
+    console.log("no launches found for this launcher yet");
+    return;
+  }
+  console.log(`${rows.length} coin(s) from launcher ${dep.contracts.launcher}\n`);
+  for (const r of rows) {
+    console.log(`${r.token}  spec ${r.specId.slice(0, 10)}…  ${r.graduated ? "graduated" : "on curve"}`);
+    console.log(`  curve: creator ${r.curveCreatorWei} wei, platform ${r.curvePlatformWei} wei`);
+    if (r.graduated) {
+      console.log(`  pool:  platform ${r.poolPlatformPairWei} wei, dev ${r.poolDevPairWei} wei, ${r.swaps} charged swaps`);
+      if (r.poolPlatformCoin || r.poolDevCoin) {
+        console.log(`  pool (in the coin, not ETH): platform ${r.poolPlatformCoin}, dev ${r.poolDevCoin}`);
+      }
+    }
+    console.log(`  total: ${r.totalEthWei} wei of ETH`);
+  }
+  let total = 0n;
+  for (const [, agg] of bySpec(rows)) total += agg.totalEthWei;
+  console.log(`\ntotal ETH income: ${total} wei`);
+}
+
+function cmdProfiles(): void {
+  for (const id of listProfiles()) {
+    const p = loadProfile(id);
+    console.log(`${id.padEnd(34)} ${p.displayName}`);
+  }
+}
+
+function cmdFormat(): void {
+  const dep = (() => {
+    try {
+      return loadLauncherDeployment();
+    } catch {
+      return undefined;
+    }
+  })();
+  const spec = specFromEnv(dep?.tenant ?? "none", dep?.chainId ?? 0);
+  console.log(formatKey(spec));
+}
+
+const HELP = `luaf — design an autonomous unit, launch it as a coin, charge for its endpoint
+
+  luaf init                  write a .env to fill in
+  luaf doctor                check the model, profiles, research and chain
+  luaf run [--design-only]   one pass: brief, research, design, validate, launch, bundle
+  luaf persistent            loop under selection until the income target or the launch cap
+  luaf income                what past launches have earned, per coin and per spec
+  luaf profiles              list the designer profiles
+  luaf format                print the format key of the configured spec
+
+Common flags (each sets the matching environment variable):
+  --tenant <slug>      --chain-id <id>        --deployment <path>
+  --rpc-url <url>      --profile <id>         --topic "<brief>"
+  --eth-usd <dollars>  --first-buy <eth>      --min-lines <n>
+  --max-steps <n>      --out-dir <path>       --model <id>
+  --target-eth <eth>   --max-launches <n>     --population <path>
+  --dry-run | --no-dry-run
+
+Nothing is signed unless --no-dry-run is passed. A dry run still simulates every
+launch against the real factory, so it fails for the same reasons a live one would.`;
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  switch (args.command) {
+    case "init":
+      return cmdInit();
+    case "doctor":
+      return cmdDoctor();
+    case "run":
+      return cmdRun(args);
+    case "persistent":
+      return cmdPersistent();
+    case "income":
+      return cmdIncome();
+    case "profiles":
+      return cmdProfiles();
+    case "format":
+      return cmdFormat();
+    case "help":
+    case "--help":
+    case "-h":
+      console.log(HELP);
+      return;
+    default:
+      console.error(`unknown command ${JSON.stringify(args.command)}\n`);
+      console.log(HELP);
+      process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});

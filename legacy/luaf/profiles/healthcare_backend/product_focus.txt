@@ -1,0 +1,1 @@
+Product focus: Healthcare backend. Revenue via API, data. Backend-only, HIPAA-style controls.

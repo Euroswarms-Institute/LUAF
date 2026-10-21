@@ -1,0 +1,16 @@
+{
+  "name": "luaf",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Launch foundry: brief -> research -> design -> validate -> launch into tenant venture factories, with selection on fee income. TypeScript pipeline + Solidity Launcher.",
+  "workspaces": [
+    "contracts",
+    "core",
+    "cli"
+  ],
+  "scripts": {
+    "build": "npm run build -w core && npm run build -w cli",
+    "test": "npm run test -w contracts && npm run test -w core",
+    "compile": "npm run compile -w contracts"
+  }
+}

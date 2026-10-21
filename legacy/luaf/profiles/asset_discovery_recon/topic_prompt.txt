@@ -1,0 +1,1 @@
+Generate exactly one concrete, autonomous business idea that is monetizable and centered on Shodan, Censys, attack surface discovery, or exposure recon. Revenue via reports, API, or feeds—no customer-facing web app. Reply with only that one sentence, no quotes, no explanation, no bullet points.

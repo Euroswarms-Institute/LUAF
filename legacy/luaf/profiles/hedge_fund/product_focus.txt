@@ -1,0 +1,1 @@
+Product focus: Hedge fund and quant. Revenue via execution, data, signals, risk analytics, backtesting. Backend-first only.

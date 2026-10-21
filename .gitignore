@@ -1,9 +1,14 @@
-build/
+node_modules/
 dist/
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+.env
+.env.*
+!.env.example
+runs/
+# legacy python
+build/
 *.egg-info/
-.eggs/
 __pycache__/
 *.py[cod]
-*.whl
-_wdist*/
-_wdist2*/

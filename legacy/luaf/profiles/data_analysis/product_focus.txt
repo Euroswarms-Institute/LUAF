@@ -1,0 +1,1 @@
+Product focus: Data analysis and analytics-oriented agents; revenue via API usage, data products, automated reports, metrics pipelines, or sellable analytics outputs. No customer-facing subscription UI or dashboard required; backend-first and data-first monetization only.

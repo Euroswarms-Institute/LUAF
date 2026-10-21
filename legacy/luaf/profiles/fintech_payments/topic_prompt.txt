@@ -1,0 +1,1 @@
+Generate exactly one concrete, autonomous business idea that is monetizable and centered on payments, compliance, KYC/AML, or settlement. Revenue via API or rails—no customer-facing web app. Reply with only that one sentence, no quotes, no explanation, no bullet points.

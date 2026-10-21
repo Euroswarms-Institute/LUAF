@@ -1,0 +1,1 @@
+Product focus: Real estate and proptech. Revenue via data, valuations, listings APIs. Backend-only.
