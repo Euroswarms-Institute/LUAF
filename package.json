@@ -1,5 +1,5 @@
 {
-  "name": "luaf",
+  "name": "lucreocracy",
   "version": "2.0.0",
   "private": true,
   "description": "Launch foundry: brief -> research -> design -> validate -> launch into tenant venture factories, with selection on fee income. TypeScript pipeline + Solidity Launcher.",

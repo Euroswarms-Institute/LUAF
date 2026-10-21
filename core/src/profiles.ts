@@ -21,15 +21,15 @@ export interface Profile {
 }
 
 /** `data/` ships beside the built `dist/`, so resolve it from this module
- *  rather than the working directory. LUAF_PROFILES_DIR overrides it. */
+ *  rather than the working directory. LUCRE_PROFILES_DIR overrides it. */
 export function profilesDir(): string {
-  const override = raw("LUAF_PROFILES_DIR");
+  const override = raw("LUCRE_PROFILES_DIR");
   if (override) return isAbsolute(override) ? override : resolve(process.cwd(), override);
   const here = dirname(fileURLToPath(import.meta.url));
   for (const c of [join(here, "../data/profiles"), join(here, "../../data/profiles")]) {
     if (existsSync(c)) return c;
   }
-  throw new ProfileError("no profiles directory found; set LUAF_PROFILES_DIR");
+  throw new ProfileError("no profiles directory found; set LUCRE_PROFILES_DIR");
 }
 
 export function listProfiles(): string[] {

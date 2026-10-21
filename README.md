@@ -1,4 +1,4 @@
-# LUAF
+# Lucreocracy
 
 **One command: a brief becomes a working autonomous unit, a coin on a launchpad we hold, and a paid
 endpoint.** Selection then decides what gets launched next, from what the last launches actually earned.
@@ -12,6 +12,18 @@ launched unit inherited its dependency.
 None of that is left. This version launches into [DoublePlus](https://github.com/IlumCI/DoublePlus)
 venture stacks, where the coin's creator is a contract we deploy and the fees are split by code, and
 the agents it writes depend on nothing but what their own task needs.
+
+The CLI is `lucre`. Formerly LUAF.
+
+### The name
+
+A Lucrehulk is a cargo freighter with weapons bolted to it — commercial infrastructure repurposed as
+power — flown by a merchant cartel that holds a fleet and a seat in the senate. That is Hilferding's
+finance capital and Lenin's financial oligarchy in one image, and it is also the shape of this
+business: the launchpad rails are the freighter, the toll is the armament.
+
+From *lucrum* and *-kratia*: rule by money. Which is the thesis of every text this design was
+derived from, and the reason the code comments cite them.
 
 ---
 
@@ -56,11 +68,11 @@ npm install
 npm run compile                 # vendored venture contracts + Launcher
 npm test                        # 7 contract tests, 57 core tests
 
-npx luaf init                   # writes a .env to fill in
-npx luaf doctor                 # model, profiles, research, chain
-npx luaf run --design-only      # design and validate, touch no chain
-npx luaf run                    # dry run: simulates the real launch, signs nothing
-npx luaf run --no-dry-run       # signs
+npx lucre init                   # writes a .env to fill in
+npx lucre doctor                 # model, profiles, research, chain
+npx lucre run --design-only      # design and validate, touch no chain
+npx lucre run                    # dry run: simulates the real launch, signs nothing
+npx lucre run --no-dry-run       # signs
 ```
 
 Nothing is signed without `--no-dry-run`. A dry run still simulates the launch against the real
@@ -135,7 +147,7 @@ reaper (`--reap-poor`), one-point crossover (`--sex`) and an order-2 mutation mo
 Our own copies are counted exactly. The rest of the market comes from the DoublePlus aggregator:
 
 ```bash
-npx luaf persistent --aggregator http://localhost:8081
+npx lucre persistent --aggregator http://localhost:8081
 ```
 
 Without it the loop sees only our own launches, which is right where we are the only launchpad on a
@@ -149,7 +161,7 @@ The brief is deliberately **not** part of the format. Breeding carries the terms
 buckets, dividend policy, opening buy, profile — and each launch finds its own subject.
 
 ```bash
-npx luaf persistent --target-eth 1 --max-launches 20 --population runs/population.json
+npx lucre persistent --target-eth 1 --max-launches 20 --population runs/population.json
 ```
 
 The loop stops on the income target, the launch cap, when selection has reaped everything, or when
@@ -173,9 +185,9 @@ are interchangeable. `luaf init` writes the full template. The ones with no sane
 | Variable | Why it has no default |
 | --- | --- |
 | `OPENAI_API_KEY` | never defaulted in source |
-| `LUAF_TENANT` | picks the deployment to launch into |
-| `LUAF_ETH_USD` | sizes the curve's start price, and the factory checks it against its band |
-| `LUAF_PRIVATE_KEY` | only read when `LUAF_DRY_RUN=0` |
+| `LUCRE_TENANT` | picks the deployment to launch into |
+| `LUCRE_ETH_USD` | sizes the curve's start price, and the factory checks it against its band |
+| `LUCRE_PRIVATE_KEY` | only read when `LUCRE_DRY_RUN=0` |
 
 ## The endpoint bundle
 
@@ -203,7 +215,7 @@ this business that isn't a transfer between traders.
 ### Measuring it
 
 ```bash
-npx luaf endpoint-income --x402-rpc https://mainnet.base.org
+npx lucre endpoint-income --x402-rpc https://mainnet.base.org
 ```
 
 Payments are read from the asset's own `Transfer` log, not from a facilitator's API: a settled

@@ -71,7 +71,7 @@ export const factoryAbi = parseAbi([
  *  fallbacks for local work. It must match the bytecode the deployed token
  *  deployer uses, or every mined address will be wrong. */
 export function tokenBytecode(dep: LauncherDeployment & { tokenBytecode?: Hex }): Hex {
-  const fromEnv = process.env.LUAF_TOKEN_BYTECODE?.trim();
+  const fromEnv = process.env.LUCRE_TOKEN_BYTECODE?.trim();
   if (fromEnv) return fromEnv as Hex;
   if (dep.tokenBytecode) return dep.tokenBytecode;
   const artifact = join(
@@ -83,7 +83,7 @@ export function tokenBytecode(dep: LauncherDeployment & { tokenBytecode?: Hex })
     if (json.bytecode && json.bytecode !== "0x") return json.bytecode;
   }
   throw new PublishError(
-    "no QuiverToken bytecode: add tokenBytecode to the launcher deployment, set LUAF_TOKEN_BYTECODE, " +
+    "no QuiverToken bytecode: add tokenBytecode to the launcher deployment, set LUCRE_TOKEN_BYTECODE, " +
       "or compile contracts/ first",
   );
 }
@@ -333,7 +333,7 @@ export async function publish(req: PublishRequest): Promise<PublishResult> {
     return { ...base, token: result[0], tokensOut: result[1] };
   }
 
-  if (!run.privateKey) throw new PublishError("no operator key; set LUAF_PRIVATE_KEY or stay in dry run");
+  if (!run.privateKey) throw new PublishError("no operator key; set LUCRE_PRIVATE_KEY or stay in dry run");
   const account = privateKeyToAccount(run.privateKey);
   const wallet = createWalletClient({ account, chain, transport: http(run.rpcUrl) }) as WalletClient;
   const { request, result } = await publicClient.simulateContract({

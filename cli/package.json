@@ -1,15 +1,15 @@
 {
-  "name": "@luaf/cli",
+  "name": "@lucreocracy/cli",
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "bin": { "luaf": "dist/main.js" },
+  "bin": { "lucre": "dist/main.js" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@luaf/core": "*"
+    "@lucreocracy/core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

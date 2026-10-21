@@ -94,21 +94,21 @@ const REQUIRED_CONTRACTS = [
 
 /** Where deployments live when no explicit path is given. */
 export function deploymentsDir(): string {
-  const d = raw("LUAF_DEPLOYMENTS_DIR");
+  const d = raw("LUCRE_DEPLOYMENTS_DIR");
   if (d) return isAbsolute(d) ? d : resolve(process.cwd(), d);
   return resolve(process.cwd(), "contracts/deployments");
 }
 
 /** Load the Launcher deployment for a tenant, by explicit path or by slug. */
 export function loadLauncherDeployment(opts: { tenant?: string; chainId?: number; file?: string } = {}): LauncherDeployment {
-  const file = opts.file ?? raw("LUAF_LAUNCHER_DEPLOYMENT");
-  const tenant = opts.tenant ?? raw("LUAF_TENANT");
-  const chainId = opts.chainId ?? envInt("LUAF_CHAIN_ID", 46630, 1, Number.MAX_SAFE_INTEGER);
+  const file = opts.file ?? raw("LUCRE_LAUNCHER_DEPLOYMENT");
+  const tenant = opts.tenant ?? raw("LUCRE_TENANT");
+  const chainId = opts.chainId ?? envInt("LUCRE_CHAIN_ID", 46630, 1, Number.MAX_SAFE_INTEGER);
   let path: string;
   if (file) {
     path = isAbsolute(file) ? file : resolve(process.cwd(), file);
   } else {
-    if (!tenant) fail("set LUAF_TENANT (or LUAF_LAUNCHER_DEPLOYMENT)");
+    if (!tenant) fail("set LUCRE_TENANT (or LUCRE_LAUNCHER_DEPLOYMENT)");
     path = join(deploymentsDir(), `launcher-${tenant}-${chainId}.json`);
   }
   let dep: LauncherDeployment;
@@ -142,10 +142,10 @@ export function llmConfig(): LlmConfig {
   return {
     apiKey: envStr("OPENAI_API_KEY"),
     baseUrl: envStr("OPENAI_BASE_URL", "https://api.openai.com/v1").replace(/\/+$/, ""),
-    model: envStr("LUAF_MODEL", "gpt-5.1"),
-    temperature: Number(raw("LUAF_TEMPERATURE") ?? "0.9"),
-    maxTokens: envInt("LUAF_MAX_TOKENS", 32_000, 256, 400_000),
-    timeoutMs: envInt("LUAF_LLM_TIMEOUT_MS", 1_200_000, 1_000, 3_600_000),
+    model: envStr("LUCRE_MODEL", "gpt-5.1"),
+    temperature: Number(raw("LUCRE_TEMPERATURE") ?? "0.9"),
+    maxTokens: envInt("LUCRE_MAX_TOKENS", 32_000, 256, 400_000),
+    timeoutMs: envInt("LUCRE_LLM_TIMEOUT_MS", 1_200_000, 1_000, 3_600_000),
   };
 }
 
@@ -165,17 +165,17 @@ export interface RunConfig {
 }
 
 export function runConfig(): RunConfig {
-  const dryRun = envBool("LUAF_DRY_RUN", true);
-  const key = raw("LUAF_PRIVATE_KEY");
-  if (!dryRun && !key) fail("set LUAF_PRIVATE_KEY, or leave LUAF_DRY_RUN=1");
-  if (key && !/^0x[0-9a-fA-F]{64}$/.test(key)) fail("LUAF_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key");
+  const dryRun = envBool("LUCRE_DRY_RUN", true);
+  const key = raw("LUCRE_PRIVATE_KEY");
+  if (!dryRun && !key) fail("set LUCRE_PRIVATE_KEY, or leave LUCRE_DRY_RUN=1");
+  if (key && !/^0x[0-9a-fA-F]{64}$/.test(key)) fail("LUCRE_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key");
   return {
     dryRun,
-    rpcUrl: envStr("LUAF_RPC_URL", "https://rpc.testnet.chain.robinhood.com"),
+    rpcUrl: envStr("LUCRE_RPC_URL", "https://rpc.testnet.chain.robinhood.com"),
     privateKey: key as Hex | undefined,
-    maxSteps: envInt("LUAF_MAX_STEPS", 3, 1, 20),
-    minLines: envInt("LUAF_MIN_LINES", 400, 1, 100_000),
-    validationTimeoutMs: envInt("LUAF_VALIDATION_TIMEOUT_MS", 600_000, 1_000, 3_600_000),
-    outDir: envStr("LUAF_OUT_DIR", "runs"),
+    maxSteps: envInt("LUCRE_MAX_STEPS", 3, 1, 20),
+    minLines: envInt("LUCRE_MIN_LINES", 400, 1, 100_000),
+    validationTimeoutMs: envInt("LUCRE_VALIDATION_TIMEOUT_MS", 600_000, 1_000, 3_600_000),
+    outDir: envStr("LUCRE_OUT_DIR", "runs"),
   };
 }

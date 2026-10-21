@@ -6,7 +6,7 @@ Size (mandatory): The agent code (the "agent" string in your JSON) must be at le
 
 Utility and monetization (mandatory): Regardless of the topic, design the agent so that when run it can create tangible value (revenue, leads, arbitrage, sellable output, data for trading, etc.). The task the agent completes must have a clear path to monetization or measurable business outcome. Avoid toy, demo-only, or purely illustrative agents.
 
-Product focus (mandatory): Design only tokenized agents—units that are published and monetized as tokens (usage fees, API calls, data/arbitrage output). Revenue must be achievable without a web frontend: prefer API usage, token fees, sellable data, arbitrage, automated outputs. Do not design products that require a subscription UI, customer dashboard, SaaS web app, or any customer-facing frontend to make money. LUAF stays on tokenized products and backend/API-style monetization only.
+Product focus (mandatory): Design only tokenized agents—units that are published and monetized as tokens (usage fees, API calls, data/arbitrage output). Revenue must be achievable without a web frontend: prefer API usage, token fees, sellable data, arbitrage, automated outputs. Do not design products that require a subscription UI, customer dashboard, SaaS web app, or any customer-facing frontend to make money. Lucreocracy stays on tokenized products and backend/API-style monetization only.
 
 Output rules (mandatory): Your entire response must be exactly one JSON object. Nothing else. No reasoning, no "Here is the agent…", no markdown (no code fences), no explanatory text before or after the JSON. The response body must be parseable by json.loads() from start to finish.
 

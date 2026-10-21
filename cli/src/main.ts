@@ -30,31 +30,31 @@ import {
   search,
   formatKey,
   type LaunchSpec,
-} from "@luaf/core";
+} from "@lucreocracy/core";
 
 /** Flags that set an environment variable, so .env and the command line are
  *  the same surface. Mirrors the Python CLI's `_apply_cli_config`. */
 const FLAG_ENV: Record<string, string> = {
-  "--tenant": "LUAF_TENANT",
-  "--chain-id": "LUAF_CHAIN_ID",
-  "--deployment": "LUAF_LAUNCHER_DEPLOYMENT",
-  "--rpc-url": "LUAF_RPC_URL",
-  "--profile": "LUAF_PROFILE",
-  "--topic": "LUAF_TOPIC",
-  "--model": "LUAF_MODEL",
-  "--min-lines": "LUAF_MIN_LINES",
-  "--max-steps": "LUAF_MAX_STEPS",
-  "--out-dir": "LUAF_OUT_DIR",
-  "--eth-usd": "LUAF_ETH_USD",
-  "--first-buy": "LUAF_FIRST_BUY_ETH",
-  "--target-eth": "LUAF_TARGET_ETH",
-  "--max-launches": "LUAF_MAX_LAUNCHES",
-  "--population": "LUAF_POPULATION",
-  "--aggregator": "LUAF_AGGREGATOR_URL",
+  "--tenant": "LUCRE_TENANT",
+  "--chain-id": "LUCRE_CHAIN_ID",
+  "--deployment": "LUCRE_LAUNCHER_DEPLOYMENT",
+  "--rpc-url": "LUCRE_RPC_URL",
+  "--profile": "LUCRE_PROFILE",
+  "--topic": "LUCRE_TOPIC",
+  "--model": "LUCRE_MODEL",
+  "--min-lines": "LUCRE_MIN_LINES",
+  "--max-steps": "LUCRE_MAX_STEPS",
+  "--out-dir": "LUCRE_OUT_DIR",
+  "--eth-usd": "LUCRE_ETH_USD",
+  "--first-buy": "LUCRE_FIRST_BUY_ETH",
+  "--target-eth": "LUCRE_TARGET_ETH",
+  "--max-launches": "LUCRE_MAX_LAUNCHES",
+  "--population": "LUCRE_POPULATION",
+  "--aggregator": "LUCRE_AGGREGATOR_URL",
   "--x402-rpc": "X402_RPC_URL",
   "--pay-to": "X402_PAY_TO",
-  "--max-open": "LUAF_MAX_OPEN",
-  "--min-graduation": "LUAF_MIN_GRADUATION_RATE",
+  "--max-open": "LUCRE_MAX_OPEN",
+  "--min-graduation": "LUCRE_MIN_GRADUATION_RATE",
 };
 
 interface Args {
@@ -79,8 +79,8 @@ function parseArgs(argv: string[]): Args {
     flags.add(name);
   }
   // Boolean flags, resolved after the loop so --no-dry-run always wins.
-  if (flags.has("--dry-run")) process.env.LUAF_DRY_RUN = "1";
-  if (flags.has("--no-dry-run")) process.env.LUAF_DRY_RUN = "0";
+  if (flags.has("--dry-run")) process.env.LUCRE_DRY_RUN = "1";
+  if (flags.has("--no-dry-run")) process.env.LUCRE_DRY_RUN = "0";
   return { command, flags };
 }
 
@@ -98,8 +98,8 @@ function env(name: string, fallback?: string): string | undefined {
  *  start price, the factory checks it against its deployed band, and a wrong
  *  automatic value would open a curve at the wrong price. */
 function ethUsd8(): bigint {
-  const v = env("LUAF_ETH_USD");
-  if (!v) fail("set --eth-usd (or LUAF_ETH_USD), e.g. --eth-usd 2500");
+  const v = env("LUCRE_ETH_USD");
+  if (!v) fail("set --eth-usd (or LUCRE_ETH_USD), e.g. --eth-usd 2500");
   if (!/^\d+(\.\d{1,8})?$/.test(v)) fail(`--eth-usd ${v}: expected a dollar amount like 2500`);
   const [whole = "0", frac = ""] = v.split(".");
   return BigInt(whole) * 10n ** 8n + BigInt(frac.padEnd(8, "0"));
@@ -114,11 +114,11 @@ function parseEth(v: string | undefined, fallback = 0n): bigint {
 
 function specFromEnv(tenant: string, chainId: number): LaunchSpec {
   return baseSpec({
-    profile: env("LUAF_PROFILE", "crypto")!,
-    topic: env("LUAF_TOPIC", "")!,
+    profile: env("LUCRE_PROFILE", "crypto")!,
+    topic: env("LUCRE_TOPIC", "")!,
     tenant,
     chainId,
-    firstBuyWei: parseEth(env("LUAF_FIRST_BUY_ETH")),
+    firstBuyWei: parseEth(env("LUCRE_FIRST_BUY_ETH")),
   });
 }
 
@@ -128,47 +128,47 @@ const ENV_TEMPLATE = `# The foundry's configuration. Every value here can also b
 # An OpenAI-compatible endpoint. Never commit a real key.
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
-LUAF_MODEL=gpt-5.1
+LUCRE_MODEL=gpt-5.1
 
 # --- what to launch into ---------------------------------------------------
 # The tenant slug and chain pick contracts/deployments/launcher-<tenant>-<chain>.json
-LUAF_TENANT=
-LUAF_CHAIN_ID=46630
-LUAF_RPC_URL=https://rpc.testnet.chain.robinhood.com
+LUCRE_TENANT=
+LUCRE_CHAIN_ID=46630
+LUCRE_RPC_URL=https://rpc.testnet.chain.robinhood.com
 
 # --- signing ---------------------------------------------------------------
 # Dry run simulates every launch against the real factory and signs nothing.
-LUAF_DRY_RUN=1
-# The operator wallet. Only read when LUAF_DRY_RUN=0.
-LUAF_PRIVATE_KEY=
+LUCRE_DRY_RUN=1
+# The operator wallet. Only read when LUCRE_DRY_RUN=0.
+LUCRE_PRIVATE_KEY=
 
 # --- the design ------------------------------------------------------------
-LUAF_PROFILE=crypto
+LUCRE_PROFILE=crypto
 # Leave the topic blank to have one generated from the profile.
-LUAF_TOPIC=
-LUAF_MIN_LINES=400
-LUAF_MAX_STEPS=3
-LUAF_OUT_DIR=runs
+LUCRE_TOPIC=
+LUCRE_MIN_LINES=400
+LUCRE_MAX_STEPS=3
+LUCRE_OUT_DIR=runs
 
 # --- launch terms ----------------------------------------------------------
 # ETH/USD in dollars. It sizes the curve's start price and must sit inside the
 # band the factory was deployed with.
-LUAF_ETH_USD=
+LUCRE_ETH_USD=
 # The operator's opening buy. Clamped to the factory's launch-window cap.
-LUAF_FIRST_BUY_ETH=0
+LUCRE_FIRST_BUY_ETH=0
 
 # --- the loop --------------------------------------------------------------
-LUAF_TARGET_ETH=1
-LUAF_MAX_LAUNCHES=10
-LUAF_POPULATION=runs/population.json
+LUCRE_TARGET_ETH=1
+LUCRE_MAX_LAUNCHES=10
+LUCRE_POPULATION=runs/population.json
 # The aggregator tells selection how crowded the chain is. Without it the loop
 # counts only our own copies and understates the competition.
-LUAF_AGGREGATOR_URL=
+LUCRE_AGGREGATOR_URL=
 # Stop adding supply when the market stops taking it: at most this many coins
 # left sitting on the curve at once, and at least this share of launches
 # reaching an open market.
-LUAF_MAX_OPEN=8
-LUAF_MIN_GRADUATION_RATE=0.1
+LUCRE_MAX_OPEN=8
+LUCRE_MIN_GRADUATION_RATE=0.1
 
 # --- the paid endpoint -----------------------------------------------------
 # 0.01 USDC on Base by default.
@@ -181,7 +181,7 @@ X402_FACILITATOR=https://x402.org/facilitator
 # chain, no private key exists for a contract address, and paying it on
 # another chain would burn every payment. Set an address you control.
 X402_PAY_TO=
-# RPC for the payment chain (not the launch chain), for luaf endpoint-income.
+# RPC for the payment chain (not the launch chain), for lucre endpoint-income.
 X402_RPC_URL=
 `;
 
@@ -193,7 +193,7 @@ function cmdInit(): void {
   }
   writeFileSync(path, ENV_TEMPLATE, "utf8");
   console.log(`wrote ${path}`);
-  console.log("Fill in OPENAI_API_KEY, LUAF_TENANT and LUAF_ETH_USD, then run: luaf doctor");
+  console.log("Fill in OPENAI_API_KEY, LUCRE_TENANT and LUCRE_ETH_USD, then run: luaf doctor");
 }
 
 async function cmdDoctor(): Promise<void> {
@@ -222,7 +222,7 @@ async function cmdDoctor(): Promise<void> {
   try {
     const profiles = listProfiles();
     ok("found", `${profiles.length} profiles`);
-    const want = env("LUAF_PROFILE", "crypto")!;
+    const want = env("LUCRE_PROFILE", "crypto")!;
     loadProfile(want);
     ok("selected", want);
   } catch (e) {
@@ -294,14 +294,14 @@ async function cmdPersistent(): Promise<void> {
     llm: llmConfig(),
     run,
     ethUsd8: ethUsd8(),
-    targetEthWei: parseEth(env("LUAF_TARGET_ETH"), 10n ** 18n),
-    maxLaunches: Number(env("LUAF_MAX_LAUNCHES", "10")),
-    populationPath: env("LUAF_POPULATION", "runs/population.json"),
-    aggregatorUrl: env("LUAF_AGGREGATOR_URL"),
+    targetEthWei: parseEth(env("LUCRE_TARGET_ETH"), 10n ** 18n),
+    maxLaunches: Number(env("LUCRE_MAX_LAUNCHES", "10")),
+    populationPath: env("LUCRE_POPULATION", "runs/population.json"),
+    aggregatorUrl: env("LUCRE_AGGREGATOR_URL"),
     absorption: {
       ...defaultAbsorptionLimits,
-      ...(env("LUAF_MAX_OPEN") ? { maxOpen: Number(env("LUAF_MAX_OPEN")) } : {}),
-      ...(env("LUAF_MIN_GRADUATION_RATE") ? { minGraduationRate: Number(env("LUAF_MIN_GRADUATION_RATE")) } : {}),
+      ...(env("LUCRE_MAX_OPEN") ? { maxOpen: Number(env("LUCRE_MAX_OPEN")) } : {}),
+      ...(env("LUCRE_MIN_GRADUATION_RATE") ? { minGraduationRate: Number(env("LUCRE_MIN_GRADUATION_RATE")) } : {}),
     },
     log: (l) => console.log(l),
   });
@@ -388,7 +388,7 @@ async function cmdEndpointIncome(): Promise<void> {
   console.log(`  verdict:  ${verdict.isMarket ? "a market" : "not yet a market"} \u2014 ${verdict.note}`);
   console.log(
     "\nThis is the only income here that is not a transfer between traders. Curve fees, pool tolls\n" +
-      "and router fees are all shares of value produced elsewhere; `luaf income` reports those.",
+      "and router fees are all shares of value produced elsewhere; `lucre income` reports those.",
   );
 }
 
@@ -411,16 +411,16 @@ function cmdFormat(): void {
   console.log(formatKey(spec));
 }
 
-const HELP = `luaf — design an autonomous unit, launch it as a coin, charge for its endpoint
+const HELP = `lucre — design an autonomous unit, launch it as a coin, charge for its endpoint
 
-  luaf init                  write a .env to fill in
-  luaf doctor                check the model, profiles, research and chain
-  luaf run [--design-only]   one pass: brief, research, design, validate, launch, bundle
-  luaf persistent            loop under selection until the income target or the launch cap
-  luaf income                what past launches have earned, per coin and per spec
-  luaf endpoint-income       what the paid endpoints have been paid, and by how many
-  luaf profiles              list the designer profiles
-  luaf format                print the format key of the configured spec
+  lucre init                  write a .env to fill in
+  lucre doctor                check the model, profiles, research and chain
+  lucre run [--design-only]   one pass: brief, research, design, validate, launch, bundle
+  lucre persistent            loop under selection until the income target or the launch cap
+  lucre income                what past launches have earned, per coin and per spec
+  lucre endpoint-income       what the paid endpoints have been paid, and by how many
+  lucre profiles              list the designer profiles
+  lucre format                print the format key of the configured spec
 
 Common flags (each sets the matching environment variable):
   --tenant <slug>      --chain-id <id>        --deployment <path>

@@ -1,6 +1,6 @@
 /** Parsing and checking the designer's JSON.
  *
- *  A port of `legacy/luaf/designer.py`. The designer is told to answer with one
+ *  A port of the Python pipeline's designer payload parser. The designer is told to answer with one
  *  JSON object and nothing else, and mostly does; this recovers the object when
  *  it wraps it in a code fence, prefixes it with prose, or leaves a trailing
  *  comma. Anything looser is a failure the designer loop retries, not something
