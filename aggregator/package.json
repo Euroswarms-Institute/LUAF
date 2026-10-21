@@ -1,0 +1,33 @@
+{
+  "name": "@lucreocracy/aggregator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-chain, multi-launchpad indexer. Every launchpad's coins become inventory for the terminal, and the launch counts feed the foundry's saturation measure.",
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "viem": "^2.21.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "~5.8.3",
+    "vitest": "^3.2.0"
+  }
+}

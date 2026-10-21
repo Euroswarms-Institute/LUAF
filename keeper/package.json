@@ -1,0 +1,14 @@
+{
+  "name": "@lucreocracy/keeper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Treasury servicing and the regime read: converts fee income to ETH, services a tenant splitter, and decides what the market will take.",
+  "scripts": {
+    "treasury": "node venture-treasury.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4"
+  }
+}

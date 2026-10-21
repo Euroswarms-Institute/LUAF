@@ -116,7 +116,15 @@ cannot be read refuses to spend rather than reading as zero.
 | --- | --- |
 | `contracts/contracts/Launcher.sol` | creator of every coin the pipeline launches; forces creator income to the splitter and tags each launch with its `specId` |
 | `contracts/contracts/vendor/doubleplus/` | the DoublePlus venture stack, vendored so the Launcher is tested against the contracts it will actually meet. Re-sync with `contracts/scripts/sync-doubleplus.sh` |
+| `contracts/contracts/v4/SyndicateRegistry.sol` | who is a member, read live through the factory, so leaving stops the stream for every coin a launchpad ever opened |
+| `contracts/contracts/v4/AggregatorRouter.sol` | charges on volume routed through any pool, ours or anyone else's, and pays a member its share |
 | `contracts/scripts/deploy-launcher.ts` | reads a DoublePlus `tenant-<slug>-<chain>.json`, deploys a creator `FeeSplitter` and the `Launcher`, writes `launcher-<slug>-<chain>.json` |
+| `contracts/scripts/deploy-tenant.ts` | a whole venture stack whose treasury is a tenant `FeeSplitter` |
+| `contracts/scripts/deploy-aggregator.ts` | the registry and the router that pays into it |
+| `aggregator/src/indexer.ts` | every launchpad on every configured chain, ours and other people's |
+| `aggregator/src/saturation.ts` | how crowded each chain is, and how fast coins reach an open market |
+| `keeper/venture-treasury.mjs` | converts fee income to ETH, services a tenant splitter, registers coins with the syndicate |
+| `keeper/venture-regime.mjs` | what the market will take: expansion, normal, contraction, and the reserve floor |
 | `core/src/spec.ts` | the launch spec: the unit of work, and the genome selection breeds |
 | `core/src/pipeline.ts` | one run, end to end |
 | `core/src/selection.ts` | frequency-dependent fitness, the reaper, crossover, order-2 mutation |
@@ -128,6 +136,24 @@ cannot be read refuses to spend rather than reading as zero.
 | `service/src/spend.ts` | what a finished run really cost |
 | `service/src/request.ts` | what a caller may ask for, and what the server keeps |
 | `core/data/profiles/` | the designer's prompt sets, one directory per profile |
+
+## The parts, and why they are all here
+
+| | Earns | Why it is in this repo |
+| --- | --- | --- |
+| `Launcher` + `core` + `service` | creator fees and the dev bucket on every coin it opens | the supply |
+| tenant `FeeSplitter` | `protocolBps` of everything a tenant's stack earns, enforced by where the fees are addressed | the rent |
+| `SyndicateRegistry` + `AggregatorRouter` | a cut of volume routed through any pool, whoever launched the coin | the hedge against launchpads becoming a commodity |
+| `aggregator` | nothing directly; it is what the router and selection read | without it a crowded chain is invisible |
+| `keeper` | nothing directly; it is what turns accrued fees into ETH | fees accrue in the coins they were charged in |
+
+The venture contracts these build on are deployed from the DoublePlus repo and
+vendored here read-only (`contracts/contracts/vendor/doubleplus/`,
+re-pinned by `contracts/scripts/sync-doubleplus.sh`, which also carries the
+stack's own test fixture so the suites here deploy the real contracts rather
+than an approximation of them). Anything that reads a venture deployment
+artifact takes its path from the environment rather than guessing a filename,
+because those artifacts are written by that repo and not by this one.
 
 ## Deploying for a tenant
 

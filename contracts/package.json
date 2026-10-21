@@ -5,7 +5,10 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy-launcher.ts"
+    "deploy": "hardhat run scripts/deploy-launcher.ts",
+    "deploy:tenant": "hardhat run scripts/deploy-tenant.ts",
+    "deploy:aggregator": "hardhat run scripts/deploy-aggregator.ts",
+    "fork:syndicate": "FORK=1 hardhat run scripts/fork-check-syndicate.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

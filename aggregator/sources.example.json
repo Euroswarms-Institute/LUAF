@@ -1,0 +1,38 @@
+{
+  "chains": [
+    {
+      "chainId": 4663,
+      "label": "Robinhood Chain",
+      "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+      "logChunk": 10000
+    },
+    {
+      "chainId": 8453,
+      "label": "Base",
+      "rpcUrl": "${BASE_RPC_URL}",
+      "logChunk": 5000
+    }
+  ],
+  "sources": [
+    {
+      "id": "doubleplus",
+      "label": "doubleplus",
+      "kind": "venture",
+      "chainId": 4663,
+      "address": "0x0000000000000000000000000000000000000000",
+      "startBlock": 0
+    },
+    {
+      "id": "example-third-party",
+      "label": "Someone else's launchpad",
+      "kind": "generic",
+      "chainId": 8453,
+      "address": "0x0000000000000000000000000000000000000000",
+      "startBlock": 0,
+      "launchEvent": "event TokenCreated(address indexed token, address indexed creator, string name, string symbol)",
+      "map": { "token": "token", "creator": "creator", "name": "name", "symbol": "symbol" },
+      "graduateEvent": "event Graduated(address indexed token)",
+      "graduateMap": { "token": "token" }
+    }
+  ]
+}

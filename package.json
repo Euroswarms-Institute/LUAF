@@ -4,13 +4,15 @@
   "private": true,
   "description": "Launch foundry: brief -> research -> design -> validate -> launch into tenant venture factories, with selection on fee income. TypeScript service + Solidity Launcher.",
   "workspaces": [
+    "aggregator",
     "contracts",
     "core",
+    "keeper",
     "service"
   ],
   "scripts": {
-    "build": "npm run build -w core && npm run build -w service",
-    "test": "npm run test -w contracts && npm run test -w core && npm run test -w service",
+    "build": "npm run build -w core && npm run build -w service && npm run build -w aggregator",
+    "test": "npm run test -w contracts && npm run test -w core && npm run test -w service && npm run test -w aggregator && npm run test -w keeper",
     "compile": "npm run compile -w contracts",
     "start": "npm run start -w service"
   }
