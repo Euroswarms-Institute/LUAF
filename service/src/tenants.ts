@@ -39,6 +39,10 @@ export interface TenantGrant {
   maxSpendWei?: bigint;
   /** Where the debits are kept. Defaults to <outDir>/<slug>/budget.json. */
   ledger?: string;
+  /** Wallets that may sign in to this launchpad's console, lowercased. Empty
+   *  means no console: only the grant token reaches this tenant, which is the
+   *  right default for a grant driven by a backend. */
+  operators?: string[];
 }
 
 /** The token is kept only as a digest: nothing needs the token itself again,
@@ -59,6 +63,26 @@ function asWei(v: unknown, where: string): bigint | undefined {
   if (typeof v === "number") throw new GrantError(`${where}: give a wei amount as a decimal string, not a number`);
   if (typeof v !== "string" || !/^\d+$/.test(v)) throw new GrantError(`${where}: expected a string of digits (wei)`);
   return BigInt(v);
+}
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** Operator wallets. Anything that is not an address is a mistake worth
+ *  reporting: silently dropping it would leave an operator who cannot sign in
+ *  and no reason given. */
+function asOperators(v: unknown, where: string): string[] | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v)) throw new GrantError(`${where}: expected an array of addresses`);
+  const out: string[] = [];
+  for (const [i, a] of v.entries()) {
+    if (typeof a !== "string" || !ADDRESS.test(a.trim())) {
+      throw new GrantError(`${where}[${i}]: expected a 0x address`);
+    }
+    const lower = a.trim().toLowerCase();
+    if (out.includes(lower)) throw new GrantError(`${where}[${i}]: ${lower} is listed twice`);
+    out.push(lower);
+  }
+  return out;
 }
 
 function asCount(v: unknown, where: string): number | undefined {
@@ -117,6 +141,7 @@ export function parseGrants(text: string): { grant: TenantGrant; token: string }
         maxLaunches: asCount(o.maxLaunches, `${slug}.maxLaunches`),
         maxSpendWei: asWei(o.maxSpendWei, `${slug}.maxSpendWei`),
         ledger: typeof o.ledger === "string" ? o.ledger : undefined,
+        operators: asOperators(o.operators, `${slug}.operators`),
       },
     });
   }
@@ -242,6 +267,10 @@ export class Budget {
 // --- the runtime -----------------------------------------------------------
 
 export interface TenantRuntime {
+  /** Mutable in exactly one field: `operators`, which reloadOperators below
+   *  replaces. Everything else is fixed for the life of the process, because
+   *  changing a chain, a ledger or a cap under a running loop would mean the
+   *  loop finished against terms it did not start under. */
   grant: TenantGrant;
   dep: LauncherDeployment;
   /** The server's run config, narrowed by the grant. Never widened. */
@@ -251,6 +280,39 @@ export interface TenantRuntime {
 
 function resolvePath(p: string): string {
   return isAbsolute(p) ? p : resolve(process.cwd(), p);
+}
+
+/** Re-read the grant file and replace each tenant's operator list.
+ *
+ *  Revoking a wallet should not need a restart: a restart kills whatever is
+ *  running and stops the loop, which is a poor price for removing one address.
+ *  Only the operator lists are taken from the reload — caps, chains and
+ *  ledgers stay as the process started with them, so a running loop cannot
+ *  find its terms changed underneath it.
+ *
+ *  Returns one line per tenant whose list changed, for the log. */
+export function reloadOperators(
+  read: () => { grant: TenantGrant; token: string }[],
+  tenants: Iterable<TenantRuntime>,
+): string[] {
+  const fresh = new Map(read().map((g) => [g.grant.slug, g.grant.operators ?? []]));
+  const changes: string[] = [];
+  for (const t of tenants) {
+    const next = fresh.get(t.grant.slug);
+    if (next === undefined) continue;
+    const before = t.grant.operators ?? [];
+    const gone = before.filter((a) => !next.includes(a));
+    const added = next.filter((a) => !before.includes(a));
+    if (!gone.length && !added.length) continue;
+    t.grant.operators = next;
+    // Named rather than counted: swapping one wallet for another is the usual
+    // case, and "1 -> 1 operators" reads as though nothing happened.
+    const parts: string[] = [];
+    if (gone.length) parts.push(`revoked ${gone.join(", ")}`);
+    if (added.length) parts.push(`added ${added.join(", ")}`);
+    changes.push(`${t.grant.slug}: ${parts.join("; ")}`);
+  }
+  return changes;
 }
 
 /** Load one tenant's deployment and narrow the server's config to it. */

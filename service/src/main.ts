@@ -12,7 +12,8 @@
 
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   llmConfig,
@@ -28,7 +29,8 @@ import { authConfig, warnWeakTokens } from "./auth.js";
 import { Jobs } from "./jobs.js";
 import { Loop } from "./loop.js";
 import { handle, serverCanSign, type Deps, type TenantService } from "./routes.js";
-import { GrantError, parseGrants, tenantRuntime, type TenantGrant } from "./tenants.js";
+import { MIN_SECRET_CHARS, Nonces, sessionConfigFromEnv } from "./siwe.js";
+import { GrantError, parseGrants, reloadOperators, tenantRuntime, type TenantGrant } from "./tenants.js";
 
 function envInt(name: string, fallback: number): number {
   const v = process.env[name]?.trim();
@@ -147,20 +149,62 @@ function buildTenant(
   };
 }
 
+/** The console page, read once at startup rather than per request: it never
+ *  changes while the process runs, and a missing file should be visible in the
+ *  startup banner, not as a 404 the first time an operator looks for it. */
+function consolePage(): string | undefined {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const p of [join(here, "../public/console.html"), join(here, "public/console.html")]) {
+    try {
+      return readFileSync(p, "utf8");
+    } catch {
+      /* try the next layout: src when running from source, dist when built */
+    }
+  }
+  return undefined;
+}
+
 async function main(): Promise<void> {
   const grants = grantsFromEnv();
   const llm = llmConfig();
   const run = runConfig();
   const usd8 = ethUsd8();
+  const session = sessionConfigFromEnv();
   const defaultProfile = process.env.LUCRE_PROFILE?.trim() || "crypto";
   const port = envInt("PORT", 8080);
 
   const tenants = new Map<string, TenantService>();
+  const grantsBySlug = new Map<string, TenantGrant>();
   for (const { grant } of grants) {
     tenants.set(grant.slug, buildTenant(grant, run, { llm, usd8 }));
+    grantsBySlug.set(grant.slug, grant);
   }
 
-  const deps: Deps = { auth: authConfig(grants), tenants, llm, defaultProfile, ethUsd8: usd8 };
+  // A grant that lists operators but has no signing secret would offer a
+  // console that can never be signed into. Say so at startup rather than
+  // letting an operator discover it by trying.
+  const withOperators = grants.filter((g) => (g.grant.operators ?? []).length > 0).map((g) => g.grant.slug);
+  if (withOperators.length && !session.secret) {
+    throw new GrantError(
+      `${withOperators.join(", ")} list console operators, so set LUCRE_SESSION_SECRET ` +
+        `(at least ${MIN_SECRET_CHARS} random characters) or remove the operators.`,
+    );
+  }
+  if (session.secret && session.secret.length < MIN_SECRET_CHARS) {
+    throw new GrantError(`LUCRE_SESSION_SECRET must be at least ${MIN_SECRET_CHARS} characters`);
+  }
+
+  const deps: Deps = {
+    auth: authConfig(grants, session),
+    tenants,
+    grants: grantsBySlug,
+    session,
+    nonces: new Nonces(),
+    consolePage: consolePage(),
+    llm,
+    defaultProfile,
+    ethUsd8: usd8,
+  };
 
   const server = createServer((req, res) => {
     void handle(req, res, deps).catch(() => {
@@ -183,10 +227,28 @@ async function main(): Promise<void> {
       const cap = b.maxSpendWei === undefined ? "no spend cap" : `${b.spendLeftWei} wei left of ${b.maxSpendWei}`;
       const count =
         b.maxLaunches === undefined ? "no launch cap" : `${b.launchesLeft} launches left of ${b.maxLaunches}`;
-      console.log(`  ${t.runtime.dep.tenant} on chain ${t.runtime.dep.chainId}: ${signs}, ${count}, ${cap}`);
+      const ops = t.runtime.grant.operators ?? [];
+      const console_ = ops.length ? `${ops.length} console operator${ops.length === 1 ? "" : "s"}` : "no console";
+      console.log(`  ${t.runtime.dep.tenant} on chain ${t.runtime.dep.chainId}: ${signs}, ${count}, ${cap}, ${console_}`);
       if (b.broken) console.warn(`    ${b.broken}`);
     }
+    if (deps.consolePage) console.log(`  console at /console, sessions last ${session.ttlSecs / 3600}h`);
+    else console.warn("  no console page found: /console will 404");
     warnWeakTokens(grants, (s) => console.warn(`  ${s}`));
+  });
+
+  // Revoking a console operator should not cost a restart, which would stop
+  // the loop and lose every running job.
+  process.on("SIGHUP", () => {
+    try {
+      const changes = reloadOperators(grantsFromEnv, [...tenants.values()].map((t) => t.runtime));
+      if (changes.length) for (const line of changes) console.log(`reloaded ${line}`);
+      else console.log("reloaded: no console operator lists changed");
+    } catch (e) {
+      // A bad grant file must not take the service down; the lists in memory
+      // stand until it is fixed.
+      console.error(`reload refused, keeping the operators in memory: ${e instanceof Error ? e.message : e}`);
+    }
   });
 
   const shutdown = () => {

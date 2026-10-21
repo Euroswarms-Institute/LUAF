@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Launch console</title>
+<!--
+  The operator's console, served by the service it drives.
+
+  One file, no build step and no framework on purpose. This page is a form and
+  a status table; dragging a bundler and a wallet-connector library into the
+  repo to render it would cost more than it is worth, and every dependency here
+  would be one more thing between an operator and a signature they are about to
+  give.
+
+  It holds no secret. A grant token never reaches a browser: the page proves a
+  wallet instead and receives a short session bound to one launchpad. The
+  spending limit it shows is the service's own, and is what bounds the damage
+  if this session is ever stolen.
+-->
+<style>
+  :root {
+    --bg: #11100e; --fg: #e8e4dc; --dim: #8d877c; --line: #2b2825;
+    --panel: #181613; --accent: #d8a24a; --warn: #c9604f; --ok: #6f9c5a;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f3ec; --fg: #1d1a16; --dim: #6b655c; --line: #ded7c9;
+      --panel: #fffdf8; --accent: #8a5d12; --warn: #a33b2a; --ok: #3f6b2c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); padding: 24px 16px 64px;
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; margin: 30px 0 8px; }
+  p.lede { color: var(--dim); margin: 0 0 20px; max-width: 60ch; font-size: 13px; }
+  section { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  dl { display: grid; grid-template-columns: minmax(10ch, 20ch) 1fr; gap: 4px 16px; margin: 0; font-size: 13px; }
+  dt { color: var(--dim); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  label { display: block; margin-bottom: 10px; font-size: 13px; }
+  label > span { display: block; color: var(--dim); margin-bottom: 3px; }
+  input, select, textarea {
+    width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 14px;
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  button {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button.go { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  pre {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 240px;
+    overflow: auto; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .note { font-size: 13px; margin: 10px 0 0; }
+  .note.bad { color: var(--warn); }
+  .note.good { color: var(--ok); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  th, td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Launch console</h1>
+  <p class="lede">
+    Brief in, coin out: research, design, validate, then launch into this launchpad's own factory.
+    Nothing is signed unless you ask for it, and never beyond this launchpad's spending limit.
+  </p>
+
+  <section id="signin">
+    <dl>
+      <dt>Launchpad</dt>
+      <dd><input id="tenant" placeholder="the launchpad's name, e.g. acme" autocomplete="off" spellcheck="false"></dd>
+      <dt>Wallet</dt>
+      <dd id="wallet" class="mono">not connected</dd>
+    </dl>
+    <div class="row">
+      <button id="connect">Connect a wallet</button>
+      <button id="auth" class="go" disabled>Sign in</button>
+    </div>
+    <p id="signin-note" class="note hidden"></p>
+  </section>
+
+  <div id="app" class="hidden">
+    <section>
+      <h2 style="margin-top:0">Allowance</h2>
+      <dl id="ready"></dl>
+      <p id="allowance-note" class="note hidden"></p>
+      <div class="row"><button id="signout">Sign out</button></div>
+    </section>
+
+    <section>
+      <h2 style="margin-top:0">Design</h2>
+      <p class="lede" style="margin-bottom:12px">
+        Leave the brief empty to have one written from the profile. A dry run simulates the launch
+        against the real factory, so it fails for the same reasons a live one would.
+      </p>
+      <label><span>Brief</span>
+        <textarea id="topic" maxlength="2000" placeholder="an agent that watches a DEX for stale oracle prices"></textarea>
+      </label>
+      <label><span>Profile</span><select id="profile"></select></label>
+      <label><span>Opening buy (ETH)</span><input id="firstBuy" value="0" inputmode="decimal"></label>
+      <div class="row">
+        <button id="design">Design only</button>
+        <button id="dry">Dry run</button>
+        <!-- Its own button, not a checkbox: a toggle left on from an hour ago
+             is how someone spends ETH they did not mean to. -->
+        <button id="live" class="go" disabled>Launch for real</button>
+      </div>
+      <p id="run-note" class="note hidden"></p>
+      <dl id="run" class="hidden" style="margin-top:12px"></dl>
+      <div class="row hidden" id="run-actions"><button id="cancel">Cancel</button></div>
+      <pre id="log" class="hidden"></pre>
+    </section>
+
+    <section>
+      <h2 style="margin-top:0">The loop</h2>
+      <p class="lede" style="margin-bottom:12px">
+        Launches on its own, breeding the formats that earned and reaping the ones that did not. It
+        stops on its income target, its launch cap, or when the market stops absorbing new coins —
+        the last of which is the one worth reading, because it means supply ran ahead of demand
+        rather than running out of work.
+      </p>
+      <dl id="loop"></dl>
+      <div class="row">
+        <button id="loop-start">Start</button>
+        <button id="loop-stop">Stop</button>
+      </div>
+      <p id="loop-note" class="note hidden"></p>
+    </section>
+
+    <section>
+      <h2 style="margin-top:0">What it earned</h2>
+      <div class="row"><button id="income-read">Read the fee events</button></div>
+      <div id="income"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KEY = "lucre-console";
+
+let address = null;
+let session = null;   // { token, expires, tenant }
+let runId = null;
+let poll = null;
+let refresher = null;
+
+// --- plumbing --------------------------------------------------------------
+
+function show(el, on) { el.classList.toggle("hidden", !on); }
+function say(el, text, kind) {
+  el.textContent = text || "";
+  el.className = "note" + (kind ? " " + kind : "");
+  show(el, !!text);
+}
+const trim = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
+
+function saveSession(s) {
+  session = s;
+  try { s ? localStorage.setItem(KEY, JSON.stringify(s)) : localStorage.removeItem(KEY); }
+  catch (e) { /* private mode: sign in again next time */ }
+}
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    // A minute of slack, so a call does not start on a session that expires
+    // while it is in flight.
+    return s && s.token && s.expires > Date.now() / 1000 + 60 ? s : null;
+  } catch (e) { return null; }
+}
+
+/** One call to the service. Throws with the service's own words: a spending
+ *  refusal carries the number an operator needs, and paraphrasing loses it. */
+async function call(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: Object.assign(
+      { authorization: "Bearer " + session.token },
+      body === undefined ? {} : { "content-type": "application/json" },
+    ),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let json = {};
+  try { json = await res.json(); } catch (e) { /* fall through to the status */ }
+  if (!res.ok) {
+    const err = new Error(typeof json.error === "string" ? trim(json.error, 300) : "request failed (" + res.status + ")");
+    err.status = res.status;
+    if (res.status === 401) { saveSession(null); render(null); }
+    throw err;
+  }
+  return json;
+}
+
+const ethFromWei = (wei, digits) => {
+  const v = Number(wei) / 1e18;
+  if (v === 0) return "0";
+  if (v < 0.00001) return v.toExponential(2);
+  return v.toLocaleString("en-US", { maximumFractionDigits: digits === undefined ? 5 : digits });
+};
+
+/** An ETH amount as exact wei. Parsed by hand rather than through Number, so a
+ *  figure typed into the form is not rounded on its way to a launch. */
+function weiFromEth(input) {
+  const v = (input || "").trim();
+  if (!v) return { ok: true, wei: "0" };
+  if (!/^\d+(\.\d{1,18})?$/.test(v)) return { ok: false, error: "an ETH amount, like 0.005" };
+  const parts = v.split(".");
+  const whole = BigInt(parts[0] || "0");
+  const frac = BigInt((parts[1] || "").padEnd(18, "0"));
+  return { ok: true, wei: (whole * (10n ** 18n) + frac).toString() };
+}
+
+const rows = (dl, pairs) => {
+  dl.textContent = "";
+  for (const [k, v] of pairs) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    dl.append(dt, dd);
+  }
+};
+
+// --- signing in ------------------------------------------------------------
+
+function newNonce() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+/** Must match service/src/siwe.ts consoleAuthMessage exactly: the service
+ *  verifies this text, and the wallet owner reads it before signing. */
+function authMessage(address, tenant, issuedAt, nonce) {
+  return [
+    "Sign in to the " + tenant + " launch console.",
+    "",
+    "Wallet: " + address.toLowerCase(),
+    "Launchpad: " + tenant,
+    "Issued at: " + issuedAt,
+    "Nonce: " + nonce,
+    "",
+    "Signing in lets this wallet design and launch coins on this launchpad,",
+    "which spends the operator's ETH on opening buys, within the launchpad's",
+    "own spending limit. This signature cannot move funds by itself.",
+  ].join("\n");
+}
+
+async function connect() {
+  if (!window.ethereum) {
+    say($("signin-note"), "No wallet found in this browser.", "bad");
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    address = (accounts && accounts[0]) || null;
+    $("wallet").textContent = address || "not connected";
+    $("auth").disabled = !address || !$("tenant").value.trim();
+    say($("signin-note"), "");
+  } catch (e) {
+    say($("signin-note"), e && e.message ? e.message : "the wallet refused", "bad");
+  }
+}
+
+async function signIn() {
+  const tenant = $("tenant").value.trim();
+  if (!address || !tenant) return;
+  $("auth").disabled = true;
+  say($("signin-note"), "Check your wallet for a message to sign.");
+  try {
+    const issuedAt = new Date().toISOString();
+    const nonce = newNonce();
+    const signature = await window.ethereum.request({
+      method: "personal_sign",
+      params: [authMessage(address, tenant, issuedAt, nonce), address],
+    });
+    const res = await fetch("/console/auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address: address, tenant: tenant, issuedAt: issuedAt, nonce: nonce, signature: signature }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.token) throw new Error(trim(json.error, 200) || "sign-in failed");
+    saveSession({ token: json.token, expires: json.expires, tenant: json.tenant });
+    try { localStorage.setItem(KEY + ":tenant", tenant); } catch (e) { /* ignore */ }
+    say($("signin-note"), "");
+    await start();
+  } catch (e) {
+    say($("signin-note"), e && e.message ? e.message : String(e), "bad");
+  } finally {
+    $("auth").disabled = !address || !$("tenant").value.trim();
+  }
+}
+
+// --- the console ------------------------------------------------------------
+
+async function start() {
+  show($("signin"), false);
+  show($("app"), true);
+  await loadProfiles();
+  await refresh();
+  if (refresher) clearInterval(refresher);
+  refresher = setInterval(() => { if (!document.hidden) refresh(); }, 20000);
+}
+
+function render(ready) {
+  if (!ready) {
+    if (refresher) { clearInterval(refresher); refresher = null; }
+    if (poll) { clearInterval(poll); poll = null; }
+    show($("app"), false);
+    show($("signin"), true);
+    return;
+  }
+  const b = ready.budget || {};
+  const live =
+    ready.canSign ? "possible"
+      : ready.maySign ? "off: the service is in dry-run mode"
+      : "off: this launchpad's grant may not sign";
+  rows($("ready"), [
+    ["Launchpad", ready.tenant + " on chain " + ready.chainId],
+    ["Factory", ready.factory],
+    ["Designer", ready.model],
+    ["Signed in as", (ready.as && ready.as.operator) || "—"],
+    ["Launches left", b.maxLaunches === undefined ? "no cap" : b.launchesLeft + " of " + b.maxLaunches],
+    ["Opening buys left", b.maxSpendWei === undefined
+      ? "no cap"
+      : ethFromWei(b.spendLeftWei || "0", 4) + " ETH of " + ethFromWei(b.maxSpendWei, 4) + " ETH"],
+    ["Spent so far", ethFromWei(b.spentWei || "0", 4) + " ETH over " + (b.launches || 0) + " launches"],
+    ["Live launches", live],
+  ]);
+  say($("allowance-note"), b.broken || "", b.broken ? "bad" : null);
+
+  const l = ready.loop || {};
+  const loopRows = [
+    ["State", l.running ? "running" : (l.stopped || "idle")],
+    ["Launches", String(l.launches || 0)],
+  ];
+  if (l.incomeEthWei) loopRows.push(["Measured income", ethFromWei(l.incomeEthWei) + " ETH"]);
+  if (l.spentEthWei) loopRows.push(["Spent on opening buys", ethFromWei(l.spentEthWei) + " ETH"]);
+  if (l.note) loopRows.push(["Note", l.note]);
+  rows($("loop"), loopRows);
+
+  const noAllowance = b.launchesLeft === 0 || b.broken !== undefined;
+  const working = !!(poll || l.running);
+  $("live").disabled = !ready.canSign || noAllowance || working;
+  $("design").disabled = working;
+  $("dry").disabled = working;
+  $("loop-start").disabled = !ready.canSign || noAllowance || !!l.running;
+  $("loop-stop").disabled = !l.running;
+}
+
+async function refresh() {
+  try { render(await call("/ready")); }
+  catch (e) { say($("allowance-note"), e.message, "bad"); }
+}
+
+async function loadProfiles() {
+  const sel = $("profile");
+  sel.textContent = "";
+  const first = document.createElement("option");
+  first.value = ""; first.textContent = "the launchpad's default";
+  sel.append(first);
+  try {
+    const { profiles } = await call("/profiles");
+    for (const p of profiles || []) {
+      const o = document.createElement("option");
+      o.value = p.id; o.textContent = p.displayName || p.id;
+      sel.append(o);
+    }
+  } catch (e) { /* the default profile still works */ }
+}
+
+async function startRun(mode) {
+  say($("run-note"), "");
+  const wei = weiFromEth($("firstBuy").value);
+  if (!wei.ok) { say($("run-note"), "Opening buy: " + wei.error, "bad"); return; }
+
+  const body = {};
+  const topic = $("topic").value.trim();
+  if (topic) body.topic = topic;
+  if ($("profile").value) body.profile = $("profile").value;
+  if (mode === "design") body.designOnly = true;
+  else body.firstBuyWei = wei.wei;
+  if (mode === "live") body.live = true;
+
+  try {
+    const started = await call("/runs", body);
+    runId = started.id;
+    show($("run"), true);
+    watch();
+    if (poll) clearInterval(poll);
+    poll = setInterval(watch, 4000);
+    refresh();
+  } catch (e) {
+    say($("run-note"), e.message, "bad");
+  }
+}
+
+async function watch() {
+  if (!runId) return;
+  let r;
+  try { r = await call("/runs/" + runId); }
+  catch (e) { say($("run-note"), e.message, "bad"); return; }
+
+  const out = [["Run", r.state + (r.live ? " (live)" : " (dry run)")]];
+  if (r.result) {
+    out.push(["Design", r.result.name + " ($" + r.result.ticker + "), " + r.result.lines + " lines"]);
+    out.push(["Brief", r.result.brief]);
+    if (r.result.token) {
+      out.push(["Coin", r.result.dryRun ? r.result.token + " (predicted, nothing signed)" : r.result.token]);
+    }
+    if (r.result.txHash) out.push(["Transaction", r.result.txHash]);
+    out.push(["Written to", r.result.dir]);
+  }
+  if (r.error) out.push(["Stopped", r.error]);
+  rows($("run"), out);
+
+  const running = r.state === "running" || r.state === "queued";
+  show($("run-actions"), running);
+  if (r.log && r.log.length) {
+    show($("log"), true);
+    $("log").textContent = r.log.join("\n") + (r.logTruncated ? "\n…" : "");
+  }
+  if (!running) {
+    if (poll) { clearInterval(poll); poll = null; }
+    say($("run-note"), r.state === "done" ? "Finished." : "", r.state === "done" ? "good" : null);
+    refresh();
+  }
+}
+
+async function readIncome() {
+  const host = $("income");
+  host.textContent = "Reading the chain…";
+  try {
+    const inc = await call("/income");
+    host.textContent = "";
+    const dl = document.createElement("dl");
+    rows(dl, [["Fee income", ethFromWei(inc.totalEthWei) + " ETH over " + (inc.coins || []).length + " coins"]]);
+    host.append(dl);
+    if ((inc.specs || []).length) {
+      const t = document.createElement("table");
+      t.innerHTML = "<thead><tr><th>Format</th><th>Coins</th><th>Graduated</th><th>Fees (ETH)</th></tr></thead>";
+      const body = document.createElement("tbody");
+      for (const s of inc.specs) {
+        const tr = document.createElement("tr");
+        for (const v of [s.specId.slice(0, 10) + "…", s.coins, s.graduated, ethFromWei(s.totalEthWei)]) {
+          const td = document.createElement("td");
+          td.textContent = String(v);
+          tr.append(td);
+        }
+        body.append(tr);
+      }
+      t.append(body);
+      host.append(t);
+    }
+  } catch (e) {
+    host.textContent = "";
+    const p = document.createElement("p");
+    p.className = "note bad";
+    p.textContent = e.message;
+    host.append(p);
+  }
+}
+
+// --- wiring ----------------------------------------------------------------
+
+$("connect").onclick = connect;
+$("auth").onclick = signIn;
+$("tenant").oninput = () => { $("auth").disabled = !address || !$("tenant").value.trim(); };
+$("design").onclick = () => startRun("design");
+$("dry").onclick = () => startRun("dry");
+$("live").onclick = () => startRun("live");
+$("cancel").onclick = async () => {
+  try { await call("/runs/" + runId + "/cancel", {}); } catch (e) { say($("run-note"), e.message, "bad"); }
+};
+$("loop-start").onclick = async () => {
+  say($("loop-note"), "");
+  try { await call("/loop/start", {}); refresh(); } catch (e) { say($("loop-note"), e.message, "bad"); }
+};
+$("loop-stop").onclick = async () => {
+  try { await call("/loop/stop", {}); refresh(); } catch (e) { say($("loop-note"), e.message, "bad"); }
+};
+$("income-read").onclick = readIncome;
+$("signout").onclick = () => { saveSession(null); render(null); };
+
+(function boot() {
+  try { $("tenant").value = localStorage.getItem(KEY + ":tenant") || ""; } catch (e) { /* ignore */ }
+  const held = loadSession();
+  if (held) { session = held; start(); }
+  if (window.ethereum && window.ethereum.selectedAddress) {
+    address = window.ethereum.selectedAddress;
+    $("wallet").textContent = address;
+    $("auth").disabled = !$("tenant").value.trim();
+  }
+})();
+</script>
+</body>
+</html>

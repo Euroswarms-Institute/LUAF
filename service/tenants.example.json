@@ -5,7 +5,10 @@
     "token": "replace-with-32-or-more-random-characters",
     "maySign": true,
     "maxLaunches": 200,
-    "maxSpendWei": "2000000000000000000"
+    "maxSpendWei": "2000000000000000000",
+    "operators": [
+      "0x0000000000000000000000000000000000000000"
+    ]
   },
   {
     "slug": "zenith",

@@ -5,15 +5,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { authConfig, authorize, warnWeakTokens, type AuthConfig } from "./auth.js";
+import { issueSession } from "./siwe.js";
 import { Jobs } from "./jobs.js";
 import { parseRunRequest, specFromRequest } from "./request.js";
 import { resolveLive, serverCanSign } from "./routes.js";
 import { broadcast, spentByLoop, spentByRun, worstCasePerLaunch } from "./spend.js";
-import { Budget, GrantError, parseGrants, tenantRuntime } from "./tenants.js";
+import { Budget, GrantError, parseGrants, reloadOperators, tenantRuntime, type TenantRuntime } from "./tenants.js";
 import { baseSpec, type RunConfig } from "@lucreocracy/core";
 
 const TOKEN = "a".repeat(40);
 const OTHER = "b".repeat(40);
+const NOW = 1_800_000_000;
 const auth: AuthConfig = authConfig([{ grant: { slug: "acme" }, token: TOKEN }]);
 
 const runCfg = (over: Partial<RunConfig> = {}): RunConfig => ({
@@ -60,9 +62,9 @@ function deploymentFile(dir: string, chainId = 4663): string {
 }
 
 describe("authorisation", () => {
-  it("says which tenant a token speaks for", () => {
-    expect(authorize(`Bearer ${TOKEN}`, auth)).toEqual({ ok: true, slug: "acme" });
-    expect(authorize(`bearer ${TOKEN}`, auth)).toEqual({ ok: true, slug: "acme" });
+  it("says which tenant a token speaks for, and that it is a grant", () => {
+    expect(authorize(`Bearer ${TOKEN}`, auth, NOW)).toEqual({ ok: true, principal: { slug: "acme", kind: "grant" } });
+    expect(authorize(`bearer ${TOKEN}`, auth, NOW).ok).toBe(true);
   });
 
   it("keeps two tenants' tokens apart", () => {
@@ -70,26 +72,47 @@ describe("authorisation", () => {
       { grant: { slug: "acme" }, token: TOKEN },
       { grant: { slug: "zenith" }, token: OTHER },
     ]);
-    expect(authorize(`Bearer ${TOKEN}`, two)).toEqual({ ok: true, slug: "acme" });
-    expect(authorize(`Bearer ${OTHER}`, two)).toEqual({ ok: true, slug: "zenith" });
+    const a = authorize(`Bearer ${TOKEN}`, two, NOW);
+    const z = authorize(`Bearer ${OTHER}`, two, NOW);
+    expect(a.ok && a.principal.slug).toBe("acme");
+    expect(z.ok && z.principal.slug).toBe("zenith");
   });
 
   it("rejects a missing, malformed or wrong token", () => {
-    expect(authorize(undefined, auth)).toMatchObject({ ok: false, status: 401 });
-    expect(authorize("", auth)).toMatchObject({ ok: false, status: 401 });
-    expect(authorize(TOKEN, auth)).toMatchObject({ ok: false, status: 401 });
-    expect(authorize(`Bearer ${OTHER}`, auth)).toMatchObject({ ok: false, status: 401 });
+    expect(authorize(undefined, auth, NOW)).toMatchObject({ ok: false, status: 401 });
+    expect(authorize("", auth, NOW)).toMatchObject({ ok: false, status: 401 });
+    expect(authorize(TOKEN, auth, NOW)).toMatchObject({ ok: false, status: 401 });
+    expect(authorize(`Bearer ${OTHER}`, auth, NOW)).toMatchObject({ ok: false, status: 401 });
     // A prefix of the real token must not pass.
-    expect(authorize(`Bearer ${TOKEN.slice(0, 20)}`, auth)).toMatchObject({ ok: false, status: 401 });
+    expect(authorize(`Bearer ${TOKEN.slice(0, 20)}`, auth, NOW)).toMatchObject({ ok: false, status: 401 });
   });
 
-  it("closes every authenticated route when no grant is configured", () => {
+  it("closes every authenticated route when nothing is configured", () => {
     // An unset secret must fail shut, not open.
     for (const cfg of [{}, { tokens: new Map<string, string>() }]) {
-      const verdict = authorize(`Bearer ${TOKEN}`, cfg);
+      const verdict = authorize(`Bearer ${TOKEN}`, cfg, NOW);
       expect(verdict).toMatchObject({ ok: false, status: 503 });
-      expect(verdict.ok === false && verdict.message).toMatch(/no tenant tokens are configured/);
+      expect(verdict.ok === false && verdict.message).toMatch(/no credentials are configured/);
     }
+  });
+
+  it("accepts a console session, and marks it as one", () => {
+    const session = { secret: "s".repeat(32), ttlSecs: 3600 };
+    const cfg = authConfig([{ grant: { slug: "acme" }, token: TOKEN }], session);
+    const { token } = issueSession(session, "0x1111111111111111111111111111111111111111", "acme", NOW);
+    const verdict = authorize(`Bearer ${token}`, cfg, NOW);
+    expect(verdict).toEqual({
+      ok: true,
+      principal: { slug: "acme", kind: "console", operator: "0x1111111111111111111111111111111111111111" },
+    });
+  });
+
+  it("opens the door for console sessions alone, with no grant tokens at all", () => {
+    const session = { secret: "s".repeat(32), ttlSecs: 3600 };
+    const cfg: AuthConfig = { tokens: new Map(), session };
+    const { token } = issueSession(session, "0x1111111111111111111111111111111111111111", "acme", NOW);
+    expect(authorize(`Bearer ${token}`, cfg, NOW).ok).toBe(true);
+    expect(authorize(`Bearer ${TOKEN}`, cfg, NOW)).toMatchObject({ ok: false, status: 401 });
   });
 
   it("names a token too short to be random", () => {
@@ -148,6 +171,21 @@ describe("grants", () => {
     expect(() => parseGrants("not json")).toThrow(/not JSON/);
   });
 
+  it("takes an operator list, lowercased, and refuses anything that is not an address", () => {
+    const [g] = parseGrants(one({ operators: ["0xAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaa"] }));
+    expect(g!.grant.operators).toEqual(["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]);
+    // Dropping a malformed one silently would leave an operator who cannot
+    // sign in and no reason given.
+    expect(() => parseGrants(one({ operators: ["not-an-address"] }))).toThrow(/expected a 0x address/);
+    expect(() => parseGrants(one({ operators: "0x1" }))).toThrow(/array of addresses/);
+    const dup = "0x1111111111111111111111111111111111111111";
+    expect(() => parseGrants(one({ operators: [dup, dup.toUpperCase().replace("0X", "0x")] }))).toThrow(/listed twice/);
+  });
+
+  it("has no console operators unless the grant names them", () => {
+    expect(parseGrants(one())[0]!.grant.operators).toBeUndefined();
+  });
+
   it("accepts the { tenants: [...] } form", () => {
     expect(parseGrants(JSON.stringify({ tenants: [{ slug: "acme", chainId: 4663, token: TOKEN }] }))).toHaveLength(1);
   });
@@ -187,6 +225,69 @@ describe("a grant narrows the server, never widens it", () => {
     expect(() =>
       tenantRuntime({ slug: "acme", chainId: 46630, deployment: deploymentFile(dir, 4663), maySign: false }, runCfg()),
     ).toThrow(/is for chain 4663/);
+  });
+});
+
+describe("revoking a console operator", () => {
+  const rt = (operators: string[]): TenantRuntime =>
+    ({ grant: { slug: "acme", chainId: 4663, maySign: true, operators } }) as TenantRuntime;
+  const A = "0x1111111111111111111111111111111111111111";
+  const B = "0x2222222222222222222222222222222222222222";
+
+  it("replaces the list without a restart, and says what changed", () => {
+    const t = rt([A, B]);
+    const changed = reloadOperators(
+      () => [{ grant: { slug: "acme", chainId: 4663, maySign: true, operators: [A] }, token: "t" }],
+      [t],
+    );
+    expect(t.grant.operators).toEqual([A]);
+    expect(changed).toEqual([`acme: revoked ${B}`]);
+  });
+
+  it("names a swap, which counting would report as no change at all", () => {
+    const t = rt([A]);
+    const changed = reloadOperators(
+      () => [{ grant: { slug: "acme", chainId: 4663, maySign: true, operators: [B] }, token: "t" }],
+      [t],
+    );
+    expect(t.grant.operators).toEqual([B]);
+    expect(changed).toEqual([`acme: revoked ${A}; added ${B}`]);
+  });
+
+  it("says nothing when nothing changed", () => {
+    const t = rt([A]);
+    expect(
+      reloadOperators(
+        () => [{ grant: { slug: "acme", chainId: 4663, maySign: true, operators: [A] }, token: "t" }],
+        [t],
+      ),
+    ).toEqual([]);
+  });
+
+  it("changes nothing but the operators, so a running loop keeps its terms", () => {
+    const t = rt([A]);
+    t.grant.maxLaunches = 5;
+    t.grant.maxSpendWei = 100n;
+    reloadOperators(
+      () => [
+        {
+          grant: { slug: "acme", chainId: 4663, maySign: false, operators: [B], maxLaunches: 999, maxSpendWei: 0n },
+          token: "t",
+        },
+      ],
+      [t],
+    );
+    expect(t.grant.operators).toEqual([B]);
+    // A loop that started under these must not find them rewritten.
+    expect(t.grant.maxLaunches).toBe(5);
+    expect(t.grant.maxSpendWei).toBe(100n);
+    expect(t.grant.maySign).toBe(true);
+  });
+
+  it("leaves a tenant the reload no longer mentions alone", () => {
+    const t = rt([A]);
+    expect(reloadOperators(() => [], [t])).toEqual([]);
+    expect(t.grant.operators).toEqual([A]);
   });
 });
 

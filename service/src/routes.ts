@@ -35,11 +35,12 @@ import {
   type RunConfig,
 } from "@lucreocracy/core";
 
-import { authorize, type AuthConfig } from "./auth.js";
+import { authorize, type AuthConfig, type Principal } from "./auth.js";
 import type { Jobs } from "./jobs.js";
 import { parseRunRequest, specFromRequest, type RunRequest } from "./request.js";
+import { signIn, type Nonces, type SessionConfig } from "./siwe.js";
 import { broadcast, spentByRun, worstCasePerLaunch } from "./spend.js";
-import type { Reservation, TenantRuntime } from "./tenants.js";
+import type { Reservation, TenantGrant, TenantRuntime } from "./tenants.js";
 
 /** Everything one tenant needs, kept apart from every other tenant's. */
 export interface TenantService {
@@ -71,6 +72,13 @@ export interface TenantService {
 export interface Deps {
   auth: AuthConfig;
   tenants: Map<string, TenantService>;
+  /** The grants themselves, for console sign-in: a wallet proves itself
+   *  against the operator list of the launchpad it names. */
+  grants: Map<string, TenantGrant>;
+  session: SessionConfig;
+  nonces: Nonces;
+  /** The console page, read once at startup. Absent means no page is served. */
+  consolePage?: string;
   llm: LlmConfig;
   /** The profile a request that names none gets. */
   defaultProfile: string;
@@ -116,6 +124,15 @@ export function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/** Routes a console session may not reach.
+ *
+ *  Short, and deliberately so: the real narrowing on a console session is that
+ *  it lasts hours rather than forever and is bound to a wallet we allowlisted,
+ *  not a long list of forbidden paths. Pretending otherwise would be theatre.
+ *  What is here is here because a browser has no use for it — endpoint income
+ *  is a read of an unrelated payment chain, configured by server environment. */
+const NOT_FOR_CONSOLE = new Set(["/endpoint-income"]);
+
 /** Whether this server, as narrowed for this tenant, may sign at all. */
 export function serverCanSign(run: RunConfig): boolean {
   return !run.dryRun && !!run.privateKey;
@@ -135,33 +152,92 @@ export function resolveLive(request: RunRequest, run: RunConfig): { live: boolea
   return { live: true };
 }
 
+const nowSecs = () => Math.floor(Date.now() / 1000);
+
 export async function handle(req: IncomingMessage, res: ServerResponse, deps: Deps): Promise<void> {
   const url = new URL(req.url ?? "/", "http://service.invalid");
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = req.method ?? "GET";
 
-  // Liveness is the one unauthenticated route, and it says nothing about
-  // configuration: an open probe should not describe the machine.
+  // Liveness is unauthenticated, and it says nothing about configuration: an
+  // open probe should not describe the machine.
   if (method === "GET" && path === "/health") {
     json(res, ok({ ok: true }));
     return;
   }
 
-  const auth = authorize(req.headers.authorization, deps.auth);
+  // The console page itself holds no secrets — it is the thing that asks for a
+  // signature — so it is served before any credential is looked for.
+  if (method === "GET" && path === "/console") {
+    if (!deps.consolePage) {
+      json(res, bad(404, "no console page is installed"));
+      return;
+    }
+    const body = Buffer.from(deps.consolePage);
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-length": body.byteLength,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      // The page talks to this origin only and embeds nothing.
+      "content-security-policy":
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+      "referrer-policy": "no-referrer",
+    });
+    res.end(body);
+    return;
+  }
+
+  // Sign-in is how a credential is obtained, so it cannot require one.
+  if (method === "POST" && path === "/console/auth") {
+    let body: unknown;
+    try {
+      const text = await readBody(req);
+      body = text.trim() ? JSON.parse(text) : {};
+    } catch (e) {
+      json(res, bad(400, `body is not JSON: ${(e as Error).message}`));
+      return;
+    }
+    const result = await signIn({
+      body,
+      grants: deps.grants,
+      session: deps.session,
+      nonces: deps.nonces,
+      nowSecs: nowSecs(),
+    });
+    json(res, result.ok ? ok(result) : bad(result.status, result.error));
+    return;
+  }
+
+  const auth = authorize(req.headers.authorization, deps.auth, nowSecs());
   if (!auth.ok) {
     json(res, bad(auth.status, auth.message));
     return;
   }
-  const tenant = deps.tenants.get(auth.slug);
+  const { principal } = auth;
+  const tenant = deps.tenants.get(principal.slug);
   if (!tenant) {
-    // A valid token with no tenant behind it is our misconfiguration, not the
-    // caller's mistake, and saying so plainly is what makes it fixable.
-    json(res, bad(503, `the grant for ${auth.slug} did not load, so this token cannot be served`));
+    // A valid credential with no tenant behind it is our misconfiguration, not
+    // the caller's mistake, and saying so plainly is what makes it fixable.
+    json(res, bad(503, `the grant for ${principal.slug} did not load, so this credential cannot be served`));
     return;
+  }
+  if (principal.kind === "console") {
+    // Rechecked on every call rather than only at sign-in, so revoking a
+    // wallet does not wait for its session to expire: remove it from the grant
+    // file and send the service SIGHUP.
+    if (!(tenant.runtime.grant.operators ?? []).includes(principal.operator ?? "")) {
+      json(res, bad(401, "that wallet is no longer an operator of this launchpad"));
+      return;
+    }
+    if (NOT_FOR_CONSOLE.has(path)) {
+      json(res, bad(403, `${path} is not reachable from a console session`));
+      return;
+    }
   }
 
   try {
-    json(res, await route(method, path, url, req, deps, tenant));
+    json(res, await route(method, path, url, req, deps, tenant, principal));
   } catch (e) {
     json(res, bad(500, e instanceof Error ? e.message : String(e)));
   }
@@ -174,6 +250,7 @@ async function route(
   req: IncomingMessage,
   deps: Deps,
   t: TenantService,
+  principal: Principal,
 ): Promise<Reply> {
   const { runtime } = t;
   const { dep, run, budget, grant } = runtime;
@@ -193,6 +270,7 @@ async function route(
       maySign: grant.maySign,
       budget: budget.view(),
       loop: t.loop.state(),
+      as: { kind: principal.kind, ...(principal.operator ? { operator: principal.operator } : {}) },
     });
   }
 

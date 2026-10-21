@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lucreocracy/core": "*"
+    "@lucreocracy/core": "*",
+    "viem": "^2.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

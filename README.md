@@ -110,6 +110,34 @@ back when it stops.
 The ledger is on disk, so a restart does not hand a tenant a fresh allowance, and a ledger that
 cannot be read refuses to spend rather than reading as zero.
 
+### The console
+
+`/console` is the operator's page, served by the service it drives. One console serves every
+launchpad, so taking on a tenant does not mean editing a tenant's website.
+
+A grant token is long-lived, ownerless and opens every route, so it belongs to a backend and never
+to a browser. A wallet on the grant's `operators` list signs a message naming the launchpad instead,
+and gets a session bound to that wallet and that launchpad, lasting `LUCRE_SESSION_HOURS` rather
+than forever. That is the shape the agent credential-vault work argues for
+([arXiv:2604.23280](https://arxiv.org/pdf/2604.23280)): the weakest holder gets a short, scoped
+token, never the standing credential.
+
+The text the wallet signs says what it authorises — launches that spend the operator's ETH, within
+the launchpad's own limit — because a generic "sign in" is consent to nothing in particular. The
+page builds that text by hand in plain JavaScript, so a test lifts its function out and runs it
+against the server's; if the two drift, that test fails rather than every sign-in failing with
+"that signature does not match" and nothing saying why.
+
+Revoking a wallet does not wait for its session to expire and does not cost a restart, which would
+stop the loop and lose every running job: remove it from the grant file and send `SIGHUP`. Only the
+operator lists are taken from the reload, so a running loop cannot find its caps or its chain
+rewritten underneath it.
+
+A console session reaches what the grant does, minus `/endpoint-income`, which is a read of an
+unrelated payment chain. The list is short on purpose: the real narrowing is the short lifetime and
+the allowlist, and the budget is what bounds the damage if a session is stolen. A longer list of
+forbidden paths would be theatre.
+
 ## Layout
 
 | Path | What it is |
@@ -135,6 +163,8 @@ cannot be read refuses to spend rather than reading as zero.
 | `service/src/tenants.ts` | the grants, and the budget each one spends against |
 | `service/src/spend.ts` | what a finished run really cost |
 | `service/src/request.ts` | what a caller may ask for, and what the server keeps |
+| `service/src/siwe.ts` | console sign-in: a wallet proves itself, and gets a short session instead of the grant token |
+| `service/public/console.html` | the operator's page, one file with no build step |
 | `core/data/profiles/` | the designer's prompt sets, one directory per profile |
 
 ## The parts, and why they are all here
