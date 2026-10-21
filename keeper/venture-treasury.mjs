@@ -34,12 +34,14 @@
 //                       contracts/scripts/deploy-aggregator.ts (default
 //                       ../contracts/deployments/aggregator-<chainId>.json).
 //                       Absent, or this stack not being a member, skips step 4.
-//   REGIME_FILE         where the trailing series lives (default runs/regime.json
-//                       beside the service's own run directories). It is a
-//                       trailing series, so it has to survive between runs: a
-//                       CI runner that keeps no disk must commit it or point
-//                       this at storage that persists, or every run reads an
-//                       empty history and classifies the market as normal.
+//   REGIME_FILE         where the trailing series lives (default
+//                       keeper/state/regime.json). It is a trailing series, so
+//                       it has to survive between runs: a runner that keeps no
+//                       disk must commit it or point this at storage that
+//                       persists, or every run reads an empty history and
+//                       calls the market normal. The default is a committed
+//                       path rather than runs/, which is gitignored, precisely
+//                       so the scheduled job can commit it.
 //   (legacy) MAX_SELL_BPS  most of one coin holding sold per run,
 //                       so a thin pool is not dumped in one block
 //   SLIPPAGE_BPS        (default 300) floor below the quote
@@ -64,7 +66,7 @@ const MAX_SELL_BPS_OVERRIDE = process.env.MAX_SELL_BPS?.trim()
   : null;
 const VOLUME_WINDOW_BLOCKS = envInt("VOLUME_WINDOW_BLOCKS", 200_000, 1, 50_000_000);
 const here = dirname(fileURLToPath(import.meta.url));
-const REGIME_FILE = process.env.REGIME_FILE?.trim() || join(here, "../runs/regime.json");
+const REGIME_FILE = process.env.REGIME_FILE?.trim() || join(here, "state/regime.json");
 const SLIPPAGE_BPS = BigInt(envInt("SLIPPAGE_BPS", 300, 0, 5_000));
 const MAX_SPEND_WEI = envEth("MAX_SPEND_ETH", "0.01");
 const CONFIRMATIONS = envInt("CONFIRMATIONS", 2, 0, 64);

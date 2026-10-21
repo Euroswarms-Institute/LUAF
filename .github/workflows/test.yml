@@ -1,0 +1,77 @@
+name: Tests
+
+# Nothing ran these suites on push. The repository had five workspaces, nearly
+# three hundred tests and an empty workflows directory, which is the state in
+# which a green repo and a broken one look identical.
+#
+# Split by workspace rather than run as one job, because the contract suite
+# mines a CREATE2 vanity salt per launch and takes minutes while the rest take
+# seconds; one job would hide a fast failure behind a slow one.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Contracts (hardhat)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund
+      - run: npm run compile -w contracts
+      - run: npm run test -w contracts
+
+  typescript:
+    name: ${{ matrix.workspace }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [core, service, aggregator, keeper]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund
+      # service imports core's build output, so a stale or missing dist fails
+      # here rather than at runtime.
+      - name: Build what the tests import
+        run: npm run build -w core
+      - run: npm run test -w ${{ matrix.workspace }}
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund
+      # A full build is the typecheck: every workspace emits, so an error in
+      # any of them stops it.
+      - run: npm run build
+
+  guard:
+    name: Reference-repo guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The guard decides whether a session can write to the reference
+    # repositories. Its own battery has to pass, or the rule it enforces is
+    # whatever the last edit left behind.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: bash .claude/hooks/guard-reference-repos.test.sh

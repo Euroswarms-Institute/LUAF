@@ -12,6 +12,8 @@ import { ethers } from "hardhat";
 // that agency, and these tests pin that membership pays and leaving stops it.
 
 const FEE_BPS = 100n; // 1% of the trade
+/** Far enough ahead that no test is racing the clock. */
+const LATER = 2n ** 48n;
 const REBATE_BPS = 3000n; // 30% of that fee to the coin's launchpad
 const BPS = 10_000n;
 
@@ -52,7 +54,7 @@ async function trade(s: Awaited<ReturnType<typeof setup>>, amountIn: bigint) {
   await (await weth.connect(trader).approve(await router.getAddress(), amountIn)).wait();
   await (await coin.mint(await v3.getAddress(), amountIn * 2n)).wait();
   const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
-  await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false)).wait();
+  await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, LATER)).wait();
   return (amountIn * FEE_BPS) / BPS;
 }
 
@@ -184,7 +186,7 @@ describe("AggregatorRouter: the syndicate rebate", function () {
     await (await s.weth.deposit({ value: ethers.parseEther("50") })).wait();
     await (await s.weth.transfer(await s.v3.getAddress(), ethers.parseEther("50"))).wait();
     const path = encodePath(await s.coin.getAddress(), 3000, await s.weth.getAddress());
-    await (await s.router.connect(s.trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false)).wait();
+    await (await s.router.connect(s.trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, LATER)).wait();
 
     const fee = (amountIn * FEE_BPS) / BPS;
     // The rebate is paid in whatever the trader spent, which here is the coin.
@@ -205,7 +207,7 @@ describe("AggregatorRouter: the syndicate rebate", function () {
     await (await s.weth.connect(s.trader).approve(await s.router.getAddress(), amountIn)).wait();
     await (await other.mint(await s.v3.getAddress(), amountIn * 2n)).wait();
     const path = encodePath(await s.weth.getAddress(), 3000, await other.getAddress());
-    await (await s.router.connect(s.trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false)).wait();
+    await (await s.router.connect(s.trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, LATER)).wait();
 
     expect(await s.router.owed(s.tenant.address, await s.weth.getAddress())).to.equal(0n);
     expect(await s.weth.balanceOf(s.treasury.address)).to.equal((amountIn * FEE_BPS) / BPS);

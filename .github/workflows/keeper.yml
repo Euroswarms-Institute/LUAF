@@ -1,0 +1,98 @@
+name: Treasury keeper
+
+# The treasury keeper moved into this repository with the rest of the venture
+# plumbing and arrived without the scheduler it had before, which meant it was
+# a script nobody invoked. Every run:
+#
+#   - pulls a tenant stack's factory fee ledger into its FeeSplitter, redeems
+#     any ERC-6909 claims the hook minted to it, and splits every asset;
+#   - sells a share of the graduated coins the keeper wallet holds, at a rate
+#     the market regime sets, because fees accrue in whatever coin they were
+#     charged in and launched coins all fall together;
+#   - unwraps WETH;
+#   - registers newly graduated coins with the syndicate registry, so the
+#     shared router starts paying for volume on them. A registry nobody
+#     populates pays nobody.
+#
+# It needs two things, and says so and stops rather than running half-blind
+# without either:
+#
+#   VENTURE_KEEPER_PK                    secret: the keeper wallet, funded for gas
+#   contracts/deployments/<file>.json    the stack's addresses
+#
+# Those deployment artifacts are written by the venture deploy, which lives in
+# the DoublePlus repository. They hold addresses and no secrets, so the file for
+# whichever stack this keeper services belongs here, committed, and
+# KEEPER_DEPLOYMENT names it.
+on:
+  schedule:
+    # Every 6 hours, off the hour: a job scheduled on the hour queues behind
+    # everyone else's.
+    - cron: "37 */6 * * *"
+  workflow_dispatch: {}
+
+# The regime series is committed, so this job alone needs write.
+permissions:
+  contents: write
+
+concurrency:
+  group: treasury-keeper
+  cancel-in-progress: false
+
+jobs:
+  treasury:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Install
+        run: npm install --no-audit --no-fund --ignore-scripts -w keeper
+
+      - name: Convert fee income, service the splitter, register graduations
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.VENTURE_KEEPER_PK }}
+          RPC_URL: ${{ secrets.VENTURE_RPC_URL || 'https://rpc.testnet.chain.robinhood.com' }}
+          CHAIN_ID: ${{ vars.VENTURE_CHAIN_ID || '46630' }}
+          DEPLOYMENT_FILE: ${{ vars.KEEPER_DEPLOYMENT }}
+          REGIME_FILE: keeper/state/regime.json
+          # Unset lets the regime set the sell rate: 20% in an expansion, 25%
+          # normal, 60% in a contraction. Set MAX_SELL_BPS only for a manual
+          # sweep.
+          MIN_SELL_ETH: ${{ vars.KEEPER_MIN_SELL_ETH || '0.002' }}
+          MAX_SPEND_ETH: ${{ vars.KEEPER_MAX_SPEND_ETH || '0.01' }}
+        run: |
+          if [ -z "$KEEPER_PRIVATE_KEY" ]; then
+            echo "VENTURE_KEEPER_PK is not set: nothing to run as. Add the secret to start the keeper."
+            exit 0
+          fi
+          if [ -z "$DEPLOYMENT_FILE" ]; then
+            echo "The KEEPER_DEPLOYMENT variable is not set."
+            echo "Commit the stack's deployment JSON (written by the venture deploy in the"
+            echo "DoublePlus repo -- addresses only, no secrets) under contracts/deployments/,"
+            echo "then set KEEPER_DEPLOYMENT to its path relative to keeper/."
+            exit 0
+          fi
+          if [ ! -f "keeper/$DEPLOYMENT_FILE" ] && [ ! -f "$DEPLOYMENT_FILE" ]; then
+            echo "KEEPER_DEPLOYMENT=$DEPLOYMENT_FILE does not exist in this checkout."
+            exit 1
+          fi
+          cd keeper && node venture-treasury.mjs
+
+      - name: Commit the regime series
+        # The series is the whole point of persisting anything here: without it
+        # every run reads an empty history and calls the market normal, which
+        # is also what a crash looks like.
+        run: |
+          if git diff --quiet -- keeper/state/regime.json; then
+            echo "no new observation"
+            exit 0
+          fi
+          git config user.name ilumCI
+          git config user.email ilumbackup@gmail.com
+          git add keeper/state/regime.json
+          git commit -m "keeper: regime observation $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 4 8; do git push && break || sleep "$i"; done

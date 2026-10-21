@@ -12,6 +12,8 @@ import { ethers } from "hardhat";
 
 const FEE_BPS = 100n; // 1%
 const BPS = 10_000n;
+/** Far enough ahead that no test is racing the clock. */
+const LATER = 2n ** 48n;
 
 function encodePath(tokenIn: string, fee: number, tokenOut: string): string {
   return ethers.concat([tokenIn, ethers.toBeHex(fee, 3), tokenOut]);
@@ -70,7 +72,7 @@ describe("AggregatorRouter", function () {
     const fee = (amountIn * FEE_BPS) / BPS;
     const expectedOut = amountIn - fee; // the mock trades 1:1
 
-    await expect(router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false))
+    await expect(router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, LATER))
       .to.emit(router, "Routed")
       .withArgs(trader.address, await weth.getAddress(), await coin.getAddress(), amountIn, expectedOut, fee);
 
@@ -90,7 +92,7 @@ describe("AggregatorRouter", function () {
     const fee = (value * FEE_BPS) / BPS;
 
     // amountIn is ignored when value is sent, so a wrong one cannot overcharge.
-    await (await router.connect(trader).swapV3(path, ethers.parseEther("999"), 0, ethers.ZeroAddress, false, { value })).wait();
+    await (await router.connect(trader).swapV3(path, ethers.parseEther("999"), 0, ethers.ZeroAddress, false, LATER, { value })).wait();
     expect(await weth.balanceOf(treasury.address)).to.equal(fee);
     expect(await coin.balanceOf(trader.address)).to.equal(value - fee);
   });
@@ -99,7 +101,7 @@ describe("AggregatorRouter", function () {
     const { trader, coin, weth, router } = await setup();
     const path = encodePath(await coin.getAddress(), 3000, await weth.getAddress());
     await expect(
-      router.connect(trader).swapV3(path, 0, 0, ethers.ZeroAddress, false, { value: ethers.parseEther("1") }),
+      router.connect(trader).swapV3(path, 0, 0, ethers.ZeroAddress, false, LATER, { value: ethers.parseEther("1") }),
     ).to.be.revertedWithCustomError(router, "WrongInputForEth");
   });
 
@@ -115,7 +117,7 @@ describe("AggregatorRouter", function () {
     const path = encodePath(await coin.getAddress(), 3000, await weth.getAddress());
     const fee = (amountIn * FEE_BPS) / BPS;
     const before = await ethers.provider.getBalance(trader.address);
-    const rc = await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, true)).wait();
+    const rc = await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, true, LATER)).wait();
     const gas = rc!.gasUsed * rc!.gasPrice;
     expect((await ethers.provider.getBalance(trader.address)) - before + gas).to.equal(amountIn - fee);
     // The fee stays in WETH; only the trader's proceeds are unwrapped.
@@ -129,7 +131,7 @@ describe("AggregatorRouter", function () {
     await (await weth.connect(trader).approve(await router.getAddress(), amountIn)).wait();
     await (await coin.mint(await v3.getAddress(), ethers.parseEther("10"))).wait();
     const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
-    await (await router.connect(trader).swapV3(path, amountIn, 0, other.address, false)).wait();
+    await (await router.connect(trader).swapV3(path, amountIn, 0, other.address, false, LATER)).wait();
     expect(await coin.balanceOf(other.address)).to.be.greaterThan(0n);
     expect(await coin.balanceOf(trader.address)).to.equal(0n);
   });
@@ -144,16 +146,16 @@ describe("AggregatorRouter", function () {
     await (await v3.setRate(ethers.parseEther("0.5"))).wait();
     const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
     await expect(
-      router.connect(trader).swapV3(path, amountIn, ethers.parseEther("3"), ethers.ZeroAddress, false),
+      router.connect(trader).swapV3(path, amountIn, ethers.parseEther("3"), ethers.ZeroAddress, false, LATER),
     ).to.be.revertedWithCustomError(router, "Slippage");
   });
 
   it("refuses an empty input or a path too short to name two tokens", async () => {
     const { trader, weth, coin, router } = await setup();
     const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
-    await expect(router.connect(trader).swapV3(path, 0, 0, ethers.ZeroAddress, false)).to.be.revertedWithCustomError(router, "NoInput");
+    await expect(router.connect(trader).swapV3(path, 0, 0, ethers.ZeroAddress, false, LATER)).to.be.revertedWithCustomError(router, "NoInput");
     await expect(
-      router.connect(trader).swapV3(await weth.getAddress(), 1, 0, ethers.ZeroAddress, false),
+      router.connect(trader).swapV3(await weth.getAddress(), 1, 0, ethers.ZeroAddress, false, LATER),
     ).to.be.revertedWithCustomError(router, "BadConfig");
   });
 
@@ -167,7 +169,7 @@ describe("AggregatorRouter", function () {
     // floors to 0 and the trade goes through uncharged. The `netIn == 0` guard
     // in _takeInput is therefore unreachable while MAX_FEE_BPS stays at 100;
     // it is kept so raising the cap could not silently swap for nothing.
-    await (await router.connect(trader).swapV3(path, 1n, 0, ethers.ZeroAddress, false)).wait();
+    await (await router.connect(trader).swapV3(path, 1n, 0, ethers.ZeroAddress, false, LATER)).wait();
     expect(await weth.balanceOf(treasury.address)).to.equal(0n);
     expect(await coin.balanceOf(trader.address)).to.equal(1n);
   });
@@ -179,7 +181,7 @@ describe("AggregatorRouter", function () {
     await (await weth.connect(trader).approve(await router.getAddress(), amountIn)).wait();
     await (await coin.mint(await v3.getAddress(), ethers.parseEther("10"))).wait();
     const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
-    await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false)).wait();
+    await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, LATER)).wait();
     expect(await weth.balanceOf(treasury.address)).to.equal(0n);
     expect(await coin.balanceOf(trader.address)).to.equal(amountIn);
   });
@@ -187,6 +189,59 @@ describe("AggregatorRouter", function () {
   it("only the pool manager can drive the unlock callback", async () => {
     const { router } = await setup();
     await expect(router.unlockCallback("0x")).to.be.revertedWithCustomError(router, "NotPoolManager");
+  });
+
+  it("refuses a trade whose deadline has passed", async () => {
+    const { router, weth, coin, v3, trader } = await setup();
+    const amountIn = ethers.parseEther("1");
+    await (await weth.connect(trader).deposit({ value: amountIn })).wait();
+    await (await weth.connect(trader).approve(await router.getAddress(), amountIn)).wait();
+    await (await coin.mint(await v3.getAddress(), ethers.parseEther("10"))).wait();
+    const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
+
+    const now = BigInt((await ethers.provider.getBlock("latest"))!.timestamp);
+    await expect(
+      router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, now - 1n),
+    ).to.be.revertedWithCustomError(router, "Expired");
+    // And nothing was taken on the way: a refused trade costs no fee.
+    expect(await weth.balanceOf(trader.address)).to.equal(amountIn);
+  });
+
+  it("treats a missing deadline as expired, not as no deadline", async () => {
+    // A caller who forgets the field should be refused rather than silently
+    // given a trade with no staleness protection at all.
+    const { router, weth, coin, v3, trader } = await setup();
+    await (await weth.connect(trader).deposit({ value: ethers.parseEther("1") })).wait();
+    await (await weth.connect(trader).approve(await router.getAddress(), ethers.parseEther("1"))).wait();
+    await (await coin.mint(await v3.getAddress(), ethers.parseEther("10"))).wait();
+    const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
+    await expect(
+      router.connect(trader).swapV3(path, ethers.parseEther("1"), 0, ethers.ZeroAddress, false, 0),
+    ).to.be.revertedWithCustomError(router, "Expired");
+  });
+
+  it("accepts a deadline in this very block", async () => {
+    // The boundary is inclusive: a trade signed for "now" must still land.
+    const { router, weth, coin, v3, trader } = await setup();
+    const amountIn = ethers.parseEther("1");
+    await (await weth.connect(trader).deposit({ value: amountIn })).wait();
+    await (await weth.connect(trader).approve(await router.getAddress(), amountIn)).wait();
+    await (await coin.mint(await v3.getAddress(), ethers.parseEther("10"))).wait();
+    const path = encodePath(await weth.getAddress(), 3000, await coin.getAddress());
+
+    const next = BigInt((await ethers.provider.getBlock("latest"))!.timestamp) + 1n;
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(next)]);
+    await (await router.connect(trader).swapV3(path, amountIn, 0, ethers.ZeroAddress, false, next)).wait();
+    expect(await coin.balanceOf(trader.address)).to.be.greaterThan(0n);
+  });
+
+  it("every swap entry point takes a deadline", async () => {
+    // A path that forgot one would be the one an attacker uses.
+    const { router } = await setup();
+    for (const name of ["swapV3", "swapV4"]) {
+      const fn = router.interface.getFunction(name as "swapV3");
+      expect(fn.inputs[fn.inputs.length - 1]!.name, name).to.equal("deadline");
+    }
   });
 
   it("has no admin: the treasury and the rate are immutable", async () => {

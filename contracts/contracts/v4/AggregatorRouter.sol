@@ -98,6 +98,7 @@ contract AggregatorRouter is IUnlockCallback, ReentrancyGuard {
     event RebateClaimed(address indexed beneficiary, address indexed token, uint256 amount);
 
     error BadConfig();
+    error Expired();
     error Slippage();
     error NoInput();
     error NothingOwed();
@@ -131,6 +132,27 @@ contract AggregatorRouter is IUnlockCallback, ReentrancyGuard {
     receive() external payable {}
 
     /// @notice The fee on a given input, so a caller can quote itself.
+    /// @dev Refuses a trade whose deadline has passed.
+    ///
+    ///      A router with no deadline lets a signed transaction sit in the
+    ///      mempool and execute later at whatever price exists then, which is
+    ///      the same exposure as having no slippage floor at all -- the floor
+    ///      was only ever right for the moment it was signed. That matters
+    ///      more here than for most contracts: measurements of private
+    ///      sandwich attacks find they overwhelmingly target router and
+    ///      aggregator contracts (arXiv:2512.17602), and protections are
+    ///      weaker in practice than callers assume (arXiv:2609.28115). Fees
+    ///      are only earned on volume that keeps coming back, so a trader who
+    ///      gets a stale fill here is revenue lost twice.
+    ///
+    ///      A deadline of 0 is always expired rather than meaning "no
+    ///      deadline": a caller who forgets the field should be refused, not
+    ///      silently given no protection.
+    modifier notExpired(uint256 deadline) {
+        if (block.timestamp > deadline) revert Expired();
+        _;
+    }
+
     function quoteFee(uint256 amountIn) external view returns (uint256) {
         return (amountIn * feeBps) / BPS;
     }
@@ -226,6 +248,8 @@ contract AggregatorRouter is IUnlockCallback, ReentrancyGuard {
     ///                   fee hook reads the trader from it to pay referrals, so
     ///                   a trade routed here earns a referrer exactly as one
     ///                   routed through VentureRouter does.
+    /// @param deadline   last block timestamp this may execute at. A minOut is
+    ///                   only correct for the moment it was signed.
     function swapV4(
         PoolKey calldata key,
         bool zeroForOne,
@@ -233,8 +257,9 @@ contract AggregatorRouter is IUnlockCallback, ReentrancyGuard {
         uint256 minOut,
         address recipient,
         bool unwrapOut,
-        bytes calldata hookData
-    ) external payable nonReentrant returns (uint256 amountOut) {
+        bytes calldata hookData,
+        uint256 deadline
+    ) external payable nonReentrant notExpired(deadline) returns (uint256 amountOut) {
         address tokenIn = Currency.unwrap(zeroForOne ? key.currency0 : key.currency1);
         address tokenOut = Currency.unwrap(zeroForOne ? key.currency1 : key.currency0);
         (uint256 netIn, uint256 fee) = _takeInput(tokenIn, amountIn);
@@ -286,13 +311,15 @@ contract AggregatorRouter is IUnlockCallback, ReentrancyGuard {
 
     /// @notice Swap along a V3 path, exact input. `path` is the usual encoded
     ///         route and its first 20 bytes name the input token.
+    /// @param deadline last block timestamp this may execute at.
     function swapV3(
         bytes calldata path,
         uint256 amountIn,
         uint256 minOut,
         address recipient,
-        bool unwrapOut
-    ) external payable nonReentrant returns (uint256 amountOut) {
+        bool unwrapOut,
+        uint256 deadline
+    ) external payable nonReentrant notExpired(deadline) returns (uint256 amountOut) {
         if (path.length < 43) revert BadConfig(); // token + fee + token
         address tokenIn = address(bytes20(path[:20]));
         address tokenOut = address(bytes20(path[path.length - 20:]));
