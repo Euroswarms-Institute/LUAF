@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "deny": [
+      "Edit(//home/user/DoublePlus/**)",
+      "Edit(//home/user/Abiogenesis/**)",
+      "Edit(/home/user/DoublePlus/**)",
+      "Edit(/home/user/Abiogenesis/**)",
+      "Edit(**/DoublePlus/**)",
+      "Edit(**/Abiogenesis/**)",
+      "Bash(git -C /home/user/DoublePlus *)",
+      "Bash(git -C /home/user/Abiogenesis *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/guard-reference-repos.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the reference repos are untouched"
+          }
+        ]
+      }
+    ]
+  }
+}
