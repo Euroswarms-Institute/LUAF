@@ -7,11 +7,15 @@ This service is the data half of that: a multi-chain, multi-launchpad indexer. `
 
 It also answers the question the foundry needs: **how crowded is this kind of launch right now?**
 
-## How it differs from `backend/`
+## Sources are configuration, not code
 
-`backend/` indexes one launchpad (the legacy V3 `LaunchpadFactory`) on one chain, because that is
-what it was built for. Here every launchpad is a **source** in a config file, and a new one is added
-by describing its launch event rather than by shipping code for it.
+A launchpad is a **source** in a config file, and a new one is added by describing its launch event
+rather than by shipping code for it. That is the whole point: a terminal that needs a release to
+index a competitor will always be behind the competitor.
+
+Two kinds. `venture` means one of our own stacks, whose ABI we know. `generic` means somebody
+else's, described by its launch event — so no third-party ABI is compiled in, and a launchpad that
+changes its contracts breaks a line of JSON rather than a build.
 
 ```jsonc
 // sources.json — copy sources.example.json
@@ -75,6 +79,7 @@ rest.
 
 | Route | What it gives |
 | --- | --- |
+| `GET /` and `/terminal` | the terminal page |
 | `GET /health` | liveness, plus what has been indexed so far |
 | `GET /api/sources` | the chains and launchpads being indexed |
 | `GET /api/coins?chainId=&source=&limit=&offset=` | inventory, newest first |
@@ -83,6 +88,24 @@ rest.
 
 Indexing starts after the server is listening, so `/health` answers during a long first backfill
 instead of looking dead to a platform health check.
+
+## The terminal
+
+`public/terminal.html` is the surface, served by this service at `/`. One file, no build step: it
+reads only the API above and follows the WebSocket, so anything that can answer the API can hand
+out the page and there is no second thing to deploy or keep in step. It is read once at startup, so
+an edit needs a restart.
+
+It shows the inventory across every indexed launchpad and chain, each coin's phase and the time it
+took to reach an open market, and the saturation table. One reading gets said out loud rather than
+left in a column: a chain with graduations inside ten minutes is flagged, because a graduation that
+fast is usually self-dealt and its turnover rate should not be believed.
+
+**Trading from it is not wired up yet**, and the page says so rather than offering a button that
+does nothing: there is no `AggregatorRouter` deployment to send a trade to. The contract is the half
+that charges — a fee on the input before the swap, with a member launchpad's share paid out of it —
+so until it exists on a chain, the terminal brings traffic and collects nothing. Deploy it
+(`npm run deploy:aggregator -w contracts`) and that panel is where the trade goes.
 
 ## What saturation can and cannot see
 

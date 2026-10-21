@@ -1,4 +1,12 @@
-/** The read API. Inventory for the terminal, saturation for the foundry. */
+/** The read API, and the terminal it serves.
+ *
+ *  Inventory for the terminal, saturation for the foundry. The terminal itself
+ *  is served from here rather than from somewhere else: it reads only this
+ *  API, so anything that can answer the API can hand out the page, and there
+ *  is no second thing to deploy or keep in step. */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import cors from "cors";
 import express, { type Express } from "express";
@@ -14,10 +22,46 @@ function intParam(value: unknown, fallback: number, min: number, max: number): n
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
+/** The terminal page, read once at startup.
+ *
+ *  It never changes while the process runs, and a missing file should show up
+ *  in the startup log rather than as a 404 the first time somebody looks. */
+function terminalPage(): string | undefined {
+  // This package compiles to CommonJS, so __dirname is the module's directory:
+  // dist/ when built, src/ under tsx. The page sits beside both.
+  for (const candidate of [join(__dirname, "../public/terminal.html"), join(__dirname, "public/terminal.html")]) {
+    try {
+      return readFileSync(candidate, "utf8");
+    } catch {
+      /* try the next layout */
+    }
+  }
+  return undefined;
+}
+
 export function createApi(cfg: AggregatorConfig, store: Store, indexer: Indexer): Express {
   const app = express();
   app.use(cors());
   app.disable("x-powered-by");
+
+  const page = terminalPage();
+  app.get(["/", "/terminal"], (_req, res) => {
+    if (!page) {
+      res.status(404).json({ error: "no terminal page is installed" });
+      return;
+    }
+    res
+      .type("html")
+      .set({
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+        // The page talks to this origin only and embeds nothing.
+        "content-security-policy":
+          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+      })
+      .send(page);
+  });
 
   app.get("/health", (_req, res) => {
     res.json({

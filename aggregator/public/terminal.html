@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal</title>
+<!--
+  The terminal: every launchpad's coins in one feed, ours and everyone else's.
+
+  This exists because the router had no road. AggregatorRouter charges on
+  volume routed through any pool, which earns nothing at all until there is a
+  surface people actually trade from -- and the surface is the only part of
+  the business that does not care who launched the coin. Every clone becomes
+  inventory rather than competition.
+
+  One file, no build step, same as the operator console. It reads the
+  aggregator's own REST API and follows its WebSocket, so a launch appears
+  here as the indexer sees it.
+
+  Routing is not wired yet, and the panel at the bottom says so rather than
+  offering a button that does nothing: there is no AggregatorRouter deployment
+  to send a trade to. When there is one, that is where it goes.
+-->
+<style>
+  :root {
+    --bg: #0c0c0e; --fg: #e6e6e9; --dim: #85858f; --line: #22222a;
+    --panel: #131318; --accent: #5ac8a0; --warm: #d8a24a; --bad: #c9604f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f7f7f5; --fg: #17171a; --dim: #66666f; --line: #e0e0dc;
+      --panel: #fffffd; --accent: #1b7a56; --warm: #8a5d12; --bad: #a33b2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); padding: 20px 16px 60px;
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+  .live { font-size: 11px; color: var(--dim); display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .dot.on { background: var(--accent); }
+  p.lede { color: var(--dim); margin: 0 0 18px; max-width: 72ch; font-size: 13px; }
+  section { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 13px 15px; margin-bottom: 13px; }
+  h2 { font-size: 13px; margin: 0 0 10px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num, th.num { text-align: right; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 10px; color: var(--dim); }
+  .grad { color: var(--accent); }
+  .curve { color: var(--warm); }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  label { font-size: 11px; color: var(--dim); display: block; }
+  select, input {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; margin-top: 3px;
+  }
+  button {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .note { font-size: 12px; color: var(--dim); margin: 8px 0 0; }
+  .note.bad { color: var(--bad); }
+  .scroll { overflow-x: auto; }
+  .new { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } to { background: transparent; } }
+  .wrap { white-space: normal; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Terminal</h1>
+    <span class="live"><span class="dot" id="dot"></span><span id="live-text">connecting</span></span>
+  </header>
+  <p class="lede">
+    Every coin on every indexed launchpad, whoever opened it. Launches and graduations arrive as
+    the indexer sees them.
+  </p>
+
+  <section>
+    <h2>How crowded it is</h2>
+    <div class="controls">
+      <label>Window
+        <select id="window">
+          <option value="1">1 day</option>
+          <option value="7" selected>7 days</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+          <option value="365">1 year</option>
+        </select>
+      </label>
+      <button id="reload">Reload</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Chain</th><th class="num">Launches</th><th class="num">Graduated</th>
+        <th class="num">Rate</th><th class="num">Median turnover</th><th class="num">Turnovers/yr</th><th class="num">Under 10 min</th>
+      </tr></thead>
+      <tbody id="sat"></tbody>
+    </table></div>
+    <p class="note" id="sat-note"></p>
+  </section>
+
+  <section>
+    <h2>Inventory</h2>
+    <div class="controls">
+      <label>Chain <select id="chain"><option value="">all</option></select></label>
+      <label>Launchpad <select id="source"><option value="">all</option></select></label>
+      <label>Show <select id="limit">
+        <option>50</option><option selected>100</option><option>250</option><option>500</option>
+      </select></label>
+      <label>Filter <input id="q" placeholder="name, symbol or address" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Coin</th><th>Launchpad</th><th class="num">Chain</th><th>Phase</th>
+        <th class="num">Opened</th><th class="num">Took</th><th>Address</th>
+      </tr></thead>
+      <tbody id="coins"></tbody>
+    </table></div>
+    <p class="note" id="coins-note"></p>
+  </section>
+
+  <section>
+    <h2>Routing</h2>
+    <p class="note" id="route-note">
+      Trading from here is not wired up: there is no <span class="mono">AggregatorRouter</span>
+      deployment to send a trade to yet. The contract charges its fee on the input before the swap
+      and pays a member launchpad its share, so the fee works on volume from any pool — but it has
+      to exist on a chain first. Deploy it with
+      <span class="mono">npm run deploy:aggregator -w contracts</span>, then this panel is where
+      the trade goes.
+    </p>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let sources = [];
+let chains = [];
+let coins = [];
+
+const fmtInt = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US"));
+const pct = (r) => (r === null || r === undefined ? "—" : (r * 100).toFixed(0) + "%");
+
+/** A duration in seconds, as the largest unit that still reads. */
+function dur(secs) {
+  if (secs === null || secs === undefined) return "—";
+  const s = Number(secs);
+  if (s < 90) return s + "s";
+  if (s < 5400) return Math.round(s / 60) + "m";
+  if (s < 172800) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+}
+
+/** How long ago, from a unix timestamp in seconds. */
+function ago(ts) {
+  if (!ts) return "—";
+  return dur(Math.max(0, Math.floor(Date.now() / 1000) - Number(ts))) + " ago";
+}
+
+const short = (a) => (a && a.length > 12 ? a.slice(0, 6) + "…" + a.slice(-4) : a || "");
+const chainLabel = (id) => (chains.find((c) => c.chainId === id) || {}).label || String(id);
+const sourceLabel = (id) => (sources.find((s) => s.id === id) || {}).label || id;
+
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+function setNote(el, text, bad) {
+  el.textContent = text || "";
+  el.className = "note" + (bad ? " bad" : "");
+}
+
+// --- saturation -----------------------------------------------------------
+
+async function loadSaturation() {
+  const body = $("sat");
+  try {
+    const s = await get("/api/saturation?windowDays=" + encodeURIComponent($("window").value));
+    body.textContent = "";
+    if (!s.chains.length) {
+      setNote($("sat-note"), "Nothing indexed in this window yet.");
+      return;
+    }
+    for (const c of s.chains) {
+      const tr = document.createElement("tr");
+      const cells = [
+        [chainLabel(c.chainId), ""],
+        [fmtInt(c.launches), "num"],
+        [fmtInt(c.graduations), "num"],
+        [pct(c.graduationRate), "num"],
+        [dur(c.medianTurnoverSecs), "num"],
+        [fmtInt(c.turnoversPerYear), "num"],
+        [fmtInt(c.fastGraduations), "num"],
+      ];
+      for (const [text, cls] of cells) {
+        const td = document.createElement("td");
+        td.className = cls;
+        td.textContent = text;
+        tr.append(td);
+      }
+      body.append(tr);
+    }
+    // The one reading worth saying out loud: a chain whose coins graduate in
+    // minutes is not a healthy market, it is one being worked.
+    const fast = s.chains.filter((c) => c.fastGraduations > 0);
+    setNote(
+      $("sat-note"),
+      fast.length
+        ? fast.map((c) => chainLabel(c.chainId) + ": " + c.fastGraduations + " graduated inside ten minutes").join("; ") +
+            ". A graduation that fast is usually self-dealt, so read the turnover rate on those chains with suspicion."
+        : "",
+    );
+  } catch (e) {
+    body.textContent = "";
+    setNote($("sat-note"), "Saturation unavailable: " + e.message, true);
+  }
+}
+
+// --- inventory ------------------------------------------------------------
+
+function renderCoins() {
+  const body = $("coins");
+  const q = $("q").value.trim().toLowerCase();
+  const rows = coins.filter((c) => {
+    if (!q) return true;
+    return (
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.symbol || "").toLowerCase().includes(q) ||
+      (c.address || "").toLowerCase().includes(q)
+    );
+  });
+  body.textContent = "";
+  for (const c of rows) {
+    body.append(coinRow(c));
+  }
+  setNote(
+    $("coins-note"),
+    rows.length ? rows.length + " of " + coins.length + " shown" : coins.length ? "Nothing matches that filter." : "Nothing indexed yet.",
+  );
+}
+
+function coinRow(c) {
+  const tr = document.createElement("tr");
+  tr.dataset.address = (c.address || "").toLowerCase();
+
+  const name = document.createElement("td");
+  name.className = "wrap";
+  name.textContent = c.symbol ? c.symbol + (c.name ? " · " + c.name : "") : c.name || "—";
+
+  const src = document.createElement("td");
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = sourceLabel(c.source);
+  src.append(tag);
+
+  const chain = document.createElement("td");
+  chain.className = "num";
+  chain.textContent = chainLabel(c.chainId);
+
+  const phase = document.createElement("td");
+  phase.className = c.graduated ? "grad" : "curve";
+  phase.textContent = c.graduated ? "open market" : "on the curve";
+
+  const opened = document.createElement("td");
+  opened.className = "num";
+  opened.textContent = ago(c.launchedAt);
+
+  // Time from launch to graduation: the turnover the foundry's fitness divides
+  // by. Blank while a coin is still filling.
+  const took = document.createElement("td");
+  took.className = "num";
+  took.textContent = c.graduated && c.graduatedAt && c.launchedAt ? dur(c.graduatedAt - c.launchedAt) : "—";
+
+  const addr = document.createElement("td");
+  addr.className = "mono";
+  addr.title = c.address || "";
+  addr.textContent = short(c.address);
+
+  tr.append(name, src, chain, phase, opened, took, addr);
+  return tr;
+}
+
+async function loadCoins() {
+  try {
+    const params = new URLSearchParams({ limit: $("limit").value });
+    if ($("chain").value) params.set("chainId", $("chain").value);
+    if ($("source").value) params.set("source", $("source").value);
+    const r = await get("/api/coins?" + params.toString());
+    coins = r.coins;
+    renderCoins();
+  } catch (e) {
+    setNote($("coins-note"), "Inventory unavailable: " + e.message, true);
+  }
+}
+
+// --- the live feed --------------------------------------------------------
+
+function live(on, text) {
+  $("dot").className = "dot" + (on ? " on" : "");
+  $("live-text").textContent = text;
+}
+
+function connect() {
+  let ws;
+  try {
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  } catch (e) {
+    live(false, "no live feed");
+    return;
+  }
+  ws.onopen = () => {
+    live(true, "live");
+    for (const channel of ["coin:launched", "coin:graduated"]) {
+      ws.send(JSON.stringify({ op: "subscribe", channel: channel, token: "*" }));
+    }
+  };
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg.channel === "coin:launched") onLaunched(msg.data);
+    else if (msg.channel === "coin:graduated") onGraduated(msg.data);
+  };
+  ws.onclose = () => {
+    live(false, "reconnecting");
+    // The feed is a convenience; the tables reload on their own either way.
+    setTimeout(connect, 4000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function onLaunched(c) {
+  if (!c || !c.address) return;
+  const addr = String(c.address).toLowerCase();
+  if (coins.some((x) => (x.address || "").toLowerCase() === addr)) return;
+  // Respect the filters: a launch on a chain the viewer filtered out should
+  // not appear just because it is new.
+  if ($("chain").value && String(c.chainId) !== $("chain").value) return;
+  if ($("source").value && c.source !== $("source").value) return;
+  coins.unshift(c);
+  const row = coinRow(c);
+  row.classList.add("new");
+  $("coins").prepend(row);
+  setNote($("coins-note"), coins.length + " shown");
+}
+
+function onGraduated(c) {
+  if (!c || !c.address) return;
+  const addr = String(c.address).toLowerCase();
+  const held = coins.find((x) => (x.address || "").toLowerCase() === addr);
+  if (held) {
+    held.graduated = true;
+    if (c.graduatedAt) held.graduatedAt = c.graduatedAt;
+  }
+  const row = $("coins").querySelector('tr[data-address="' + addr + '"]');
+  if (row && held) {
+    row.replaceWith(Object.assign(coinRow(held), { className: "new" }));
+  }
+  loadSaturation();
+}
+
+// --- wiring ---------------------------------------------------------------
+
+async function boot() {
+  try {
+    const s = await get("/api/sources");
+    chains = s.chains;
+    sources = s.sources;
+    for (const c of chains) {
+      const o = document.createElement("option");
+      o.value = String(c.chainId);
+      o.textContent = c.label;
+      $("chain").append(o);
+    }
+    for (const src of sources) {
+      const o = document.createElement("option");
+      o.value = src.id;
+      o.textContent = src.label + " (" + chainLabel(src.chainId) + ")";
+      $("source").append(o);
+    }
+  } catch (e) {
+    setNote($("coins-note"), "The aggregator is not answering: " + e.message, true);
+    live(false, "offline");
+    return;
+  }
+  await Promise.all([loadCoins(), loadSaturation()]);
+  connect();
+  // A slow backstop, so a dropped feed still converges.
+  setInterval(() => { if (!document.hidden) { loadCoins(); loadSaturation(); } }, 60000);
+}
+
+$("reload").onclick = () => { loadCoins(); loadSaturation(); };
+$("window").onchange = loadSaturation;
+$("chain").onchange = loadCoins;
+$("source").onchange = loadCoins;
+$("limit").onchange = loadCoins;
+$("q").oninput = renderCoins;
+
+boot();
+</script>
+</body>
+</html>

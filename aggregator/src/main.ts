@@ -65,6 +65,7 @@ async function main() {
     console.log(`aggregator listening on :${cfg.port}`);
     console.log(`  sources: ${cfg.sources.map((s) => s.id).join(", ")}`);
     console.log(`  REST http://localhost:${cfg.port}/api/coins   WS ws://localhost:${cfg.port}/ws`);
+    console.log(`  terminal http://localhost:${cfg.port}/`);
   });
 
   // Indexing starts after the server is up, so /health answers during a long

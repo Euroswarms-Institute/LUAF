@@ -151,6 +151,7 @@ forbidden paths would be theatre.
 | `contracts/scripts/deploy-aggregator.ts` | the registry and the router that pays into it |
 | `aggregator/src/indexer.ts` | every launchpad on every configured chain, ours and other people's |
 | `aggregator/src/saturation.ts` | how crowded each chain is, and how fast coins reach an open market |
+| `aggregator/public/terminal.html` | the terminal: every launchpad's coins in one feed, served by the aggregator |
 | `keeper/venture-treasury.mjs` | converts fee income to ETH, services a tenant splitter, registers coins with the syndicate |
 | `keeper/venture-regime.mjs` | what the market will take: expansion, normal, contraction, and the reserve floor |
 | `core/src/spec.ts` | the launch spec: the unit of work, and the genome selection breeds |
@@ -174,7 +175,7 @@ forbidden paths would be theatre.
 | `Launcher` + `core` + `service` | creator fees and the dev bucket on every coin it opens | the supply |
 | tenant `FeeSplitter` | `protocolBps` of everything a tenant's stack earns, enforced by where the fees are addressed | the rent |
 | `SyndicateRegistry` + `AggregatorRouter` | a cut of volume routed through any pool, whoever launched the coin | the hedge against launchpads becoming a commodity |
-| `aggregator` | nothing directly; it is what the router and selection read | without it a crowded chain is invisible |
+| `aggregator` + its terminal | nothing yet: the router has no deployment to route to | the toll booth needs a road, and the road does not care who launched the coin |
 | `keeper` | nothing directly; it is what turns accrued fees into ETH | fees accrue in the coins they were charged in |
 
 The venture contracts these build on are deployed from the DoublePlus repo and
