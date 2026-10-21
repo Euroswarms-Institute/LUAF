@@ -38,6 +38,26 @@ export interface TokenIncome {
   token: Address;
   specId: Hex;
   graduated: boolean;
+  /** Unix seconds the coin was launched. */
+  launchedAt: number;
+  /** Unix seconds it graduated, or null while it is still on the curve. */
+  graduatedAt: number | null;
+  /** How long the capital advanced for this coin has been tied up: launch to
+   *  graduation once it graduates, launch to now while it has not.
+   *
+   *  This is Marx's turnover period, and it is the term the old pipeline had
+   *  no way to see. Capital II ch. 16 puts the arithmetic plainly: the annual
+   *  rate of surplus value "is always equal to s'n" — the real rate times the
+   *  number of turnovers in the year — so "there is a difference of 900% in
+   *  the annual rate of surplus-value of the two capitals A and B" that differ
+   *  only in how fast they turn over. Two formats earning the same fees, one
+   *  graduating in three days and one in ninety, are not equally good
+   *  businesses, and until this field existed selection scored them alike. */
+  turnoverSecs: number;
+  /** True once the turnover completed, i.e. the coin graduated. An unfinished
+   *  turnover is capital still in circulation, which Capital II ch. 5 says
+   *  "produces neither commodities nor surplus-value". */
+  turnoverComplete: boolean;
   /** Our share of curve fees, as the coin's creator. ETH. */
   curveCreatorWei: bigint;
   /** The tenant stack's platform share of curve fees. ETH. */
@@ -62,6 +82,14 @@ export interface SpecIncome {
   creatorEthWei: bigint;
   platformEthWei: bigint;
   swaps: number;
+  /** Mean turnover period across this spec's coins, in seconds. Unfinished
+   *  turnovers count at their elapsed time, so a coin stuck on the curve drags
+   *  the mean up rather than being quietly left out. */
+  meanTurnoverSecs: number;
+  /** How many of this spec's coins completed a turnover. */
+  turnoversComplete: number;
+  /** Unix seconds of the most recent launch from this spec, for age decay. */
+  lastLaunchAt: number;
 }
 
 export interface IncomeOptions {
@@ -122,9 +150,25 @@ export async function collectIncome(
   const chunk = opts.chunk ?? 50_000n;
   const page = { fromBlock, toBlock, chunk };
 
-  type LaunchedLog = { args: { specId: Hex; token: Address; factory: Address } };
+  // A busy factory puts many launches in one block, so block timestamps are
+  // read once per block and reused; asking per log is the single largest
+  // source of RPC calls in a backfill.
+  const blockTimes = new Map<string, number>();
+  const blockTime = async (block: bigint | null | undefined): Promise<number> => {
+    if (block === null || block === undefined) return 0;
+    const key = block.toString();
+    const hit = blockTimes.get(key);
+    if (hit !== undefined) return hit;
+    const b = await client.getBlock({ blockNumber: block });
+    const ts = Number(b.timestamp);
+    blockTimes.set(key, ts);
+    return ts;
+  };
+  const now = Math.floor(Date.now() / 1000);
+
+  type LaunchedLog = { blockNumber: bigint | null; args: { specId: Hex; token: Address; factory: Address } };
   type FeeAccruedLog = { args: { token: Address; recipient: Address; amount: bigint } };
-  type GraduatedLog = { args: { token: Address; poolId: Hex } };
+  type GraduatedLog = { blockNumber: bigint | null; args: { token: Address; poolId: Hex } };
   type FeeTakenLog = { args: { id: Hex; currency: Address; platform: bigint; founderTax: bigint; sniper: bigint } };
   type BucketsLog = { args: { id: Hex; dev: bigint } };
 
@@ -132,10 +176,17 @@ export async function collectIncome(
   const byToken = new Map<string, TokenIncome>();
   for (const l of launched) {
     const token = l.args.token;
+    const launchedAt = await blockTime(l.blockNumber);
     byToken.set(token.toLowerCase(), {
       token,
       specId: l.args.specId,
       graduated: false,
+      launchedAt,
+      graduatedAt: null,
+      // Until it graduates the turnover is still running, so it is measured
+      // against now rather than left at zero.
+      turnoverSecs: launchedAt > 0 ? Math.max(0, now - launchedAt) : 0,
+      turnoverComplete: false,
       curveCreatorWei: 0n,
       curvePlatformWei: 0n,
       poolPlatformPairWei: 0n,
@@ -168,6 +219,13 @@ export async function collectIncome(
     const row = byToken.get(key);
     if (!row) continue;
     row.graduated = true;
+    row.graduatedAt = await blockTime(g.blockNumber);
+    // The turnover closes at graduation: that is when the curve's bounded
+    // phase ends and the pool's unbounded toll begins.
+    if (row.launchedAt > 0 && row.graduatedAt > 0) {
+      row.turnoverSecs = Math.max(0, row.graduatedAt - row.launchedAt);
+      row.turnoverComplete = true;
+    }
     poolToToken.set(g.args.poolId.toLowerCase(), key);
   }
 
@@ -232,13 +290,21 @@ export function bySpec(rows: TokenIncome[]): Map<string, SpecIncome> {
       creatorEthWei: 0n,
       platformEthWei: 0n,
       swaps: 0,
+      meanTurnoverSecs: 0,
+      turnoversComplete: 0,
+      lastLaunchAt: 0,
     };
     agg.tokens.push(r.token);
     if (r.graduated) agg.graduated++;
+    if (r.turnoverComplete) agg.turnoversComplete++;
     agg.totalEthWei += r.totalEthWei;
     agg.creatorEthWei += r.curveCreatorWei + r.poolDevPairWei;
     agg.platformEthWei += r.curvePlatformWei + r.poolPlatformPairWei;
     agg.swaps += r.swaps;
+    // Running mean, so the field is correct after every row rather than only
+    // once the loop ends.
+    agg.meanTurnoverSecs += (r.turnoverSecs - agg.meanTurnoverSecs) / agg.tokens.length;
+    agg.lastLaunchAt = Math.max(agg.lastLaunchAt, r.launchedAt);
     out.set(key, agg);
   }
   return out;

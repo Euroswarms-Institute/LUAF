@@ -72,6 +72,13 @@ export interface Member {
   born: number;
   /** Epoch of its last launch. */
   lastLaunch: number;
+  /** Mean turnover period of its coins, in seconds: launch to graduation, or
+   *  launch to now while a coin is still on the curve. 0 means not measured. */
+  meanTurnoverSecs?: number;
+  /** Coins of its that completed a turnover. */
+  turnoversComplete?: number;
+  /** Unix seconds of its most recent launch, for the depreciation term. */
+  lastLaunchAt?: number;
   parents?: string[];
 }
 
@@ -93,6 +100,17 @@ export interface SelectionConfig {
   learnedMutPct: number;
   /** Fields mutated per offspring, on average. */
   mutationRate: number;
+  /** Ceiling on turnovers per year, so one fast coin cannot dominate on noise.
+   *  Marx's arithmetic has no ceiling; a mean measured over one or two coins
+   *  does, because a single lucky three-hour graduation would otherwise score
+   *  thousands of times an honest one. */
+  maxTurnoversPerYear: number;
+  /** Half-life of past earnings, in days. Capital I ch. 15 on machinery: it
+   *  "loses exchange-value, either by machines of the same sort being produced
+   *  cheaper than it, or by better machines entering into competition with
+   *  it." A format's takings from months ago say little about what it would
+   *  earn today, so they are discounted rather than counted at face value. */
+  incomeHalfLifeDays: number;
 }
 
 export const defaultSelectionConfig: SelectionConfig = {
@@ -101,6 +119,8 @@ export const defaultSelectionConfig: SelectionConfig = {
   graceLaunches: 2,
   learnedMutPct: 25,
   mutationRate: 2,
+  maxTurnoversPerYear: 365, // a turnover a day is as fast as this will credit
+  incomeHalfLifeDays: 30,
 };
 
 /** Live copies of a spec's format: ours plus the market's. */
@@ -113,13 +133,80 @@ export function copiesOfFormat(pop: Population, spec: LaunchSpec): number {
   return mine + (pop.rivals?.[key] ?? 0);
 }
 
-/** Fitness: income per live copy of the format, in wei.
+/** Seconds in a Julian year, the base the turnover rate is annualised against. */
+const SECONDS_PER_YEAR = 31_557_600;
+/** Fixed-point denominator for the time multipliers, so fitness stays bigint
+ *  wei throughout and no amount is rounded through a float. */
+const SCALE = 1_000_000n;
+
+/** Turnovers per year, scaled by SCALE. Marx's `n`.
  *
- *  Dividing by the copy count is what prices saturation in. A format with ten
- *  times the gross income and a hundred times the copies scores a tenth as
- *  much, which is the whole point: it says what the next copy is worth, not
- *  what the last hundred were. */
-export function fitness(pop: Population, m: Member): bigint {
+ *  An unmeasured turnover returns exactly one turnover a year, so a format
+ *  with no timing yet is neither rewarded nor punished for it. */
+export function turnoverRate(meanTurnoverSecs: number | undefined, cfg: SelectionConfig): bigint {
+  if (!meanTurnoverSecs || meanTurnoverSecs <= 0) return SCALE;
+  const perYear = SECONDS_PER_YEAR / meanTurnoverSecs;
+  const capped = Math.min(perYear, cfg.maxTurnoversPerYear);
+  return BigInt(Math.max(1, Math.round(capped * Number(SCALE))));
+}
+
+/** What a format's past earnings are still worth, scaled by SCALE.
+ *
+ *  Exponential decay on the age of the last launch. Returns SCALE (no
+ *  discount) when the age is unknown, so missing data never silently writes
+ *  a format off. */
+export function depreciation(
+  lastLaunchAt: number | undefined,
+  cfg: SelectionConfig,
+  now = Math.floor(Date.now() / 1000),
+): bigint {
+  if (!lastLaunchAt || lastLaunchAt <= 0 || cfg.incomeHalfLifeDays <= 0) return SCALE;
+  const ageDays = Math.max(0, (now - lastLaunchAt) / 86_400);
+  const factor = Math.pow(0.5, ageDays / cfg.incomeHalfLifeDays);
+  // Floored at one part in SCALE rather than zero: old earnings should be
+  // worth almost nothing, not literally nothing. At zero every ageing format
+  // ties and the ordering falls back to list position, which is no ordering
+  // at all.
+  return BigInt(Math.max(1, Math.round(factor * Number(SCALE))));
+}
+
+/** Fitness: what the next copy of this format is worth per year, in wei.
+ *
+ *  Three terms, each answering a different question the business actually
+ *  faces:
+ *
+ *  1. **Income per live copy** — prices saturation in. A format with ten times
+ *     the gross income and a hundred times the copies scores a tenth as much,
+ *     because the question is what the next copy earns, not what the last
+ *     hundred did.
+ *  2. **Turnovers per year** — Capital II ch. 16: the annual rate of surplus
+ *     value "is always equal to s'n", and two capitals alike in everything but
+ *     turnover period differ by "900% in the annual rate". A format that
+ *     graduates in three days and one that takes ninety are not equally good
+ *     businesses, and scoring them alike was the loop's largest blind spot.
+ *     A coin still on the curve has an open turnover, which counts against it:
+ *     capital in circulation, in Capital II ch. 5's terms, "produces neither
+ *     commodities nor surplus-value".
+ *  3. **Depreciation** — earnings decay with age, because a format's takings
+ *     from months ago say little about what it would earn now.
+ *
+ *  The result is a rate (wei per copy per year), not a total, so it stays
+ *  comparable across formats of different ages. */
+export function fitness(pop: Population, m: Member, cfg: SelectionConfig = defaultSelectionConfig, now?: number): bigint {
+  const copies = copiesOfFormat(pop, m.spec);
+  if (copies <= 0) return 0n;
+  const perCopy = m.feesEthWei / BigInt(copies);
+  if (perCopy === 0n) return 0n;
+  const n = turnoverRate(m.meanTurnoverSecs, cfg);
+  const d = depreciation(m.lastLaunchAt, cfg, now);
+  return (perCopy * n * d) / (SCALE * SCALE);
+}
+
+/** Income per copy with no time terms, for reporting and for the cost test.
+ *  `paysItsWay` compares against what a launch cost us, which is a cash
+ *  amount, not a rate — annualising both sides would cancel out and comparing
+ *  a rate to a cost would be a category error. */
+export function incomePerCopy(pop: Population, m: Member): bigint {
   const copies = copiesOfFormat(pop, m.spec);
   if (copies <= 0) return 0n;
   return m.feesEthWei / BigInt(copies);
@@ -130,19 +217,19 @@ export function fitness(pop: Population, m: Member): bigint {
  *  inside its grace period is spared, because one launch is not evidence. */
 export function paysItsWay(pop: Population, m: Member, cfg: SelectionConfig): boolean {
   if (m.copies < cfg.graceLaunches) return true;
-  return fitness(pop, m) >= cfg.costPerLaunchWei;
+  return incomePerCopy(pop, m) >= cfg.costPerLaunchWei;
 }
 
 /** The reaper: poorest first, oldest among equals, down to capacity. Ported
  *  from `--reap-poor`, which orders the queue by (energy, age). */
-export function reap(pop: Population, cfg: SelectionConfig): Member[] {
+export function reap(pop: Population, cfg: SelectionConfig, now?: number): Member[] {
   const keep = pop.members.filter((m) => paysItsWay(pop, m, cfg));
-  const culled = keep.length ? keep : bestFew(pop, 2);
+  const culled = keep.length ? keep : bestFew(pop, 2, cfg, now);
   if (culled.length <= cfg.carryingCapacity) return culled;
   return [...culled]
     .sort((a, b) => {
-      const fa = fitness(pop, a);
-      const fb = fitness(pop, b);
+      const fa = fitness(pop, a, cfg, now);
+      const fb = fitness(pop, b, cfg, now);
       if (fa !== fb) return fa > fb ? -1 : 1;
       return a.born - b.born;
     })
@@ -151,11 +238,11 @@ export function reap(pop: Population, cfg: SelectionConfig): Member[] {
 
 /** Never let the population empty: a world with nothing alive cannot evolve.
  *  Abiogenesis hit this as error catastrophe and it ended the run. */
-function bestFew(pop: Population, n: number): Member[] {
+function bestFew(pop: Population, n: number, cfg: SelectionConfig = defaultSelectionConfig, now?: number): Member[] {
   return [...pop.members]
     .sort((a, b) => {
-      const fa = fitness(pop, a);
-      const fb = fitness(pop, b);
+      const fa = fitness(pop, a, cfg, now);
+      const fb = fitness(pop, b, cfg, now);
       return fa === fb ? a.born - b.born : fa > fb ? -1 : 1;
     })
     .slice(0, n);
@@ -482,13 +569,17 @@ export function breed(pop: Population, opts: BreedOptions): Population {
 /** The spec to launch next: the fittest that is not yet saturated. Ties and
  *  untried specs go first, so a new format gets its grace launches before the
  *  incumbent's record decides everything. */
-export function nextSpec(pop: Population, cfg: SelectionConfig = defaultSelectionConfig): Member | undefined {
+export function nextSpec(
+  pop: Population,
+  cfg: SelectionConfig = defaultSelectionConfig,
+  now?: number,
+): Member | undefined {
   if (pop.members.length === 0) return undefined;
   const untried = pop.members.filter((m) => m.copies < cfg.graceLaunches);
   const pool = untried.length ? untried : pop.members;
   return [...pool].sort((a, b) => {
-    const fa = fitness(pop, a);
-    const fb = fitness(pop, b);
+    const fa = fitness(pop, a, cfg, now);
+    const fb = fitness(pop, b, cfg, now);
     if (fa !== fb) return fa > fb ? -1 : 1;
     if (a.copies !== b.copies) return a.copies - b.copies;
     return a.born - b.born;
@@ -551,14 +642,35 @@ export function parsePopulation(text: string): Population {
  *  breeds on what happened rather than on what was hoped for. */
 export function applyIncome(
   pop: Population,
-  income: Map<string, { totalEthWei: bigint; tokens: unknown[]; graduated: number }>,
+  income: Map<
+    string,
+    {
+      totalEthWei: bigint;
+      tokens: unknown[];
+      graduated: number;
+      meanTurnoverSecs?: number;
+      turnoversComplete?: number;
+      lastLaunchAt?: number;
+    }
+  >,
 ): Population {
   return {
     ...pop,
     members: pop.members.map((m) => {
       const row = income.get(m.id.toLowerCase());
       if (!row) return m;
-      return { ...m, feesEthWei: row.totalEthWei, copies: Math.max(m.copies, row.tokens.length), graduated: row.graduated };
+      return {
+        ...m,
+        feesEthWei: row.totalEthWei,
+        copies: Math.max(m.copies, row.tokens.length),
+        graduated: row.graduated,
+        // Measured timing replaces whatever was there; a field the chain did
+        // not report is left alone rather than zeroed, since zero reads as
+        // "unmeasured" and would quietly drop the turnover term.
+        meanTurnoverSecs: row.meanTurnoverSecs ?? m.meanTurnoverSecs,
+        turnoversComplete: row.turnoversComplete ?? m.turnoversComplete,
+        lastLaunchAt: row.lastLaunchAt ?? m.lastLaunchAt,
+      };
     }),
   };
 }

@@ -300,10 +300,25 @@ async function cmdIncome(): Promise<void> {
         console.log(`  pool (in the coin, not ETH): platform ${r.poolPlatformCoin}, dev ${r.poolDevCoin}`);
       }
     }
+    const days = (secs: number) => (secs / 86_400).toFixed(1);
+    console.log(
+      r.turnoverComplete
+        ? `  turnover: ${days(r.turnoverSecs)} days, complete`
+        : `  turnover: ${days(r.turnoverSecs)} days and still open (on the curve)`,
+    );
     console.log(`  total: ${r.totalEthWei} wei of ETH`);
   }
   let total = 0n;
-  for (const [, agg] of bySpec(rows)) total += agg.totalEthWei;
+  console.log("\nper spec:");
+  for (const [, agg] of bySpec(rows)) {
+    total += agg.totalEthWei;
+    const n = agg.meanTurnoverSecs > 0 ? 31_557_600 / agg.meanTurnoverSecs : 1;
+    console.log(
+      `  ${agg.specId.slice(0, 10)}\u2026  ${agg.tokens.length} coin(s), ${agg.graduated} graduated, ` +
+        `${agg.totalEthWei} wei, mean turnover ${(agg.meanTurnoverSecs / 86_400).toFixed(1)}d ` +
+        `(${n.toFixed(1)} per year)`,
+    );
+  }
   console.log(`\ntotal ETH income: ${total} wei`);
 }
 

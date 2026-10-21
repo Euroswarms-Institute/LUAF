@@ -169,8 +169,12 @@ export async function runPersistent(req: PersistentRequest): Promise<PersistentR
       const before = pop.members.length;
       pop = breed(pop, { cfg, tenant: req.dep.tenant, chainId: req.dep.chainId });
       epochs++;
-      const best = pop.members.length ? fitness(pop, pop.members[0]!) : 0n;
-      log(`epoch ${pop.epoch}: ${before} -> ${pop.members.length} specs, best fitness ${best} wei/copy`);
+      // members[0] is not the best, only the first; rank to report honestly.
+      const best = pop.members.reduce((hi, m) => {
+        const f = fitness(pop, m, cfg);
+        return f > hi ? f : hi;
+      }, 0n);
+      log(`epoch ${pop.epoch}: ${before} -> ${pop.members.length} specs, best ${best} wei/copy/year`);
       savePopulation(req.populationPath, pop);
       if (pop.members.length === 0) {
         stopped = "exhausted";

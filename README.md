@@ -102,10 +102,31 @@ depends on build artifacts and can never mine against a bytecode the chain disag
 
 ## Selection
 
-Fitness is **fee income divided by the number of live copies of the format**, counting rivals as
-well as our own. That one divisor is what prices saturation in: a format with ten times the gross
-income and a hundred times the copies scores a tenth as much, because the question is what the
-*next* copy is worth. A spec whose income per copy falls below what a launch costs is reaped.
+Fitness is a **rate**: what the next copy of a format is worth per year, in wei. Three terms:
+
+```
+fitness = (fees / live copies) x (turnovers per year) x (depreciation)
+```
+
+1. **Income per live copy** prices saturation in, counting rivals as well as our own. A format with
+   ten times the gross income and a hundred times the copies scores a tenth as much, because the
+   question is what the *next* copy is worth, not what the last hundred were.
+2. **Turnovers per year** is Marx's `n`. Capital II ch. 16 gives the arithmetic outright — the annual
+   rate of surplus value "is always equal to s'n", and two capitals alike in everything but turnover
+   period differ by "900% in the annual rate". A format that graduates in three days and one that
+   takes ninety are not equally good businesses; scoring them alike was this loop's largest blind
+   spot. A coin still on the curve has an *open* turnover and is counted against the format at its
+   elapsed time: capital in circulation, per Capital II ch. 5, "produces neither commodities nor
+   surplus-value". Capped at one turnover a day, so a single lucky fast graduation cannot dominate.
+3. **Depreciation** discounts earnings by age, half-life 30 days. Capital I ch. 15 on machinery: it
+   "loses exchange-value, either by machines of the same sort being produced cheaper than it, or by
+   better machines entering into competition with it." What a format took months ago says little
+   about what it would take now — and with models replaced every few weeks, that applies to agents
+   harder than to looms.
+
+The reap test is deliberately **not** this rate. Whether a format covered what a launch cost is a
+cash question, so it compares income per copy against `costPerLaunchWei`; annualising one side of
+that would make a loss-making format look solvent just for being quick.
 
 The rules come from [Abiogenesis](https://github.com/IlumCI/Abiogenesis), which exists to test which
 selection pressures keep producing novelty: frequency-dependent payoff (`--streams`), the poorest-first
