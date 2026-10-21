@@ -188,6 +188,39 @@ Each run writes `runs/<timestamp>-<brief>/endpoint/`: the agent, a server, a Doc
   verified *and settled* through a facilitator before the agent runs. If payment cannot be checked,
   the call is refused rather than served for free.
 
+### Who it pays, and why that is checked
+
+`X402_PAY_TO` must be an address somebody controls **on the payment network**. The creator splitter
+is only accepted when `X402_NETWORK` settles on the chain that splitter was deployed to — then it
+really is there and the tenant's 90/10 terms hold on endpoint income too.
+
+Otherwise the pipeline refuses. A `FeeSplitter` is a contract, its address comes from a deploy nonce
+on one chain, and no private key exists for it anywhere. Naming it as the recipient on Base while it
+lives on Robinhood Chain would send every payment to an account with no code and no owner. That is
+not a misconfiguration that shows up as an error later; it is a silent burn of the only revenue in
+this business that isn't a transfer between traders.
+
+### Measuring it
+
+```bash
+npx luaf endpoint-income --x402-rpc https://mainnet.base.org
+```
+
+Payments are read from the asset's own `Transfer` log, not from a facilitator's API: a settled
+transfer is the fact, and a facilitator's record of one is a claim about it.
+
+It reports **unique payers** beside the total, and will not call revenue a market without them.
+Capital I ch. 5: "If equivalents are exchanged, no surplus-value results... Circulation, or the
+exchange of commodities, begets no value", and "The capitalist class, as a whole, in any country,
+cannot over-reach themselves." Money arriving from two addresses over and over is us paying
+ourselves or one customer; the same sum from fifty is demand. By default it wants five payers and no
+single payer above 60% of the total.
+
+One limit worth stating: with a shared recipient, endpoint revenue **cannot be attributed to a
+particular agent**. Every agent pays the same address, so the total is the total. Per-agent
+attribution would need a recipient per agent, which is a deploy per agent — not worth it until there
+is revenue to attribute.
+
 `X402_DISABLE=1` serves it for nothing. That is for local testing; on a deployed instance it gives
 the agent away.
 

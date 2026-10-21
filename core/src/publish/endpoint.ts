@@ -17,12 +17,22 @@ import { join } from "node:path";
 import { slug, type Product } from "../payload.js";
 
 export interface EndpointConfig {
-  /** Address paid for each call. */
+  /** Address paid for each call.
+   *
+   *  It must be an address somebody controls **on the payment network**. That
+   *  is not a pedantic point: a FeeSplitter is a contract, its address is
+   *  derived from a deploy nonce on the chain it was deployed to, and no
+   *  private key exists for it anywhere. Name it as the recipient on a
+   *  different chain and every payment lands in an account with no code and no
+   *  owner, which is a burn. `resolveEndpointConfig` enforces this. */
   payTo: string;
   /** Price per call, in the asset's smallest unit (USDC has 6 decimals). */
   priceAtomic: string;
   /** x402 network id, e.g. "base" or "base-sepolia". */
   network: string;
+  /** The chain that network settles on, when it is one we can name. Null for
+   *  a network this code does not recognise — unknown, not assumed equal. */
+  chainId?: number | null;
   /** ERC-20 the price is denominated in. */
   asset: string;
   assetName?: string;
@@ -454,17 +464,96 @@ export function writeBundle(req: BundleRequest): BundleResult {
   return { dir, files: Object.keys(files), scriptName };
 }
 
+/** x402 network names mapped to the chain they settle on.
+ *
+ *  Only networks whose chain id is not in doubt. A name that is not here
+ *  resolves to null, meaning unknown — which is treated as "cannot prove the
+ *  recipient exists there", not as "probably fine". */
+export const X402_CHAIN_IDS: Record<string, number> = {
+  base: 8453,
+  "base-sepolia": 84532,
+  ethereum: 1,
+  "ethereum-sepolia": 11155111,
+  polygon: 137,
+  arbitrum: 42161,
+  optimism: 10,
+  avalanche: 43114,
+};
+
+export function chainIdForNetwork(network: string): number | null {
+  return X402_CHAIN_IDS[network.trim().toLowerCase()] ?? null;
+}
+
 /** Endpoint settings from the environment. USDC on Base by default, through
- *  Coinbase's facilitator, because that is where x402 traffic actually is. */
+ *  the public facilitator, because that is where x402 traffic actually is.
+ *
+ *  `payTo` is not defaulted. See `resolveEndpointConfig`. */
 export function endpointConfigFromEnv(payTo: string): EndpointConfig {
+  const network = process.env.X402_NETWORK?.trim() || "base";
   return {
     payTo,
     priceAtomic: process.env.X402_PRICE_ATOMIC?.trim() || "10000", // 0.01 USDC
-    network: process.env.X402_NETWORK?.trim() || "base",
+    network,
+    chainId: chainIdForNetwork(network),
     asset: process.env.X402_ASSET?.trim() || "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     assetName: process.env.X402_ASSET_NAME?.trim() || "USDC",
     assetVersion: process.env.X402_ASSET_VERSION?.trim() || "2",
     facilitator: process.env.X402_FACILITATOR?.trim() || "https://x402.org/facilitator",
     timeoutSeconds: Number(process.env.X402_TIMEOUT_SECONDS?.trim() || "60"),
   };
+}
+
+export class EndpointConfigError extends Error {}
+
+/**
+ * Work out who the endpoint pays, and refuse rather than guess.
+ *
+ * Endpoint revenue is the only income in this business that is not a transfer
+ * between traders — Capital I ch. 5: "Circulation, or the exchange of
+ * commodities, begets no value", and Capital III ch. 17 on merchant capital
+ * creating "neither value nor surplus-value". That makes it the income worth
+ * protecting most carefully, and the earlier default did the opposite: it
+ * named the creator FeeSplitter, a contract on the *launch* chain, while the
+ * payments settle on Base. No private key exists for a contract address, so
+ * every payment would have landed in an ownerless account.
+ *
+ * The rule: the splitter may be the recipient only when the payment network
+ * settles on the same chain it was deployed to — then it really is there and
+ * the tenant's 90/10 terms hold on endpoint income too. Otherwise an explicit
+ * `X402_PAY_TO` on the payment network is required.
+ */
+export function resolveEndpointConfig(opts: {
+  /** The creator splitter and the chain it lives on. */
+  splitter: string;
+  launchChainId: number;
+  /** Overrides everything below; used when a caller supplies its own. */
+  override?: EndpointConfig;
+}): EndpointConfig {
+  if (opts.override) return validateEndpointConfig(opts.override, opts);
+  const explicit = process.env.X402_PAY_TO?.trim();
+  const cfg = endpointConfigFromEnv(explicit || opts.splitter);
+  return validateEndpointConfig(cfg, opts);
+}
+
+function validateEndpointConfig(
+  cfg: EndpointConfig,
+  opts: { splitter: string; launchChainId: number },
+): EndpointConfig {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.payTo)) {
+    throw new EndpointConfigError(`X402_PAY_TO must be an address, got ${JSON.stringify(cfg.payTo)}`);
+  }
+  if (/^0x0{40}$/.test(cfg.payTo)) {
+    throw new EndpointConfigError("the endpoint cannot be paid to the zero address");
+  }
+  const isSplitter = cfg.payTo.toLowerCase() === opts.splitter.toLowerCase();
+  if (isSplitter && cfg.chainId !== opts.launchChainId) {
+    const where = cfg.chainId === null ? `an unrecognised network (${cfg.network})` : `chain ${cfg.chainId}`;
+    throw new EndpointConfigError(
+      `the creator splitter ${cfg.payTo} is a contract on chain ${opts.launchChainId}, but payments settle ` +
+        `on ${where}. A contract address has no private key, so paying it there would burn every payment. ` +
+        `Set X402_PAY_TO to an address you control on ${cfg.network}, or point X402_NETWORK at chain ` +
+        `${opts.launchChainId}.`,
+    );
+  }
+  return cfg;
 }

@@ -12,7 +12,12 @@ import { resolve } from "node:path";
 
 import {
   baseSpec,
+  chainIdForNetwork,
+  collectEndpointIncome,
+  concentration,
   defaultAbsorptionLimits,
+  formatAtomic,
+  resolveEndpointConfig,
   bySpec,
   collectIncome,
   listProfiles,
@@ -46,6 +51,8 @@ const FLAG_ENV: Record<string, string> = {
   "--max-launches": "LUAF_MAX_LAUNCHES",
   "--population": "LUAF_POPULATION",
   "--aggregator": "LUAF_AGGREGATOR_URL",
+  "--x402-rpc": "X402_RPC_URL",
+  "--pay-to": "X402_PAY_TO",
   "--max-open": "LUAF_MAX_OPEN",
   "--min-graduation": "LUAF_MIN_GRADUATION_RATE",
 };
@@ -164,11 +171,18 @@ LUAF_MAX_OPEN=8
 LUAF_MIN_GRADUATION_RATE=0.1
 
 # --- the paid endpoint -----------------------------------------------------
-# Defaults to 0.01 USDC on Base, paid to the creator splitter.
+# 0.01 USDC on Base by default.
 X402_PRICE_ATOMIC=10000
 X402_NETWORK=base
 X402_ASSET=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 X402_FACILITATOR=https://x402.org/facilitator
+# Who the endpoints pay. REQUIRED unless X402_NETWORK settles on the same
+# chain as the launchpad: the creator splitter is a contract on the launch
+# chain, no private key exists for a contract address, and paying it on
+# another chain would burn every payment. Set an address you control.
+X402_PAY_TO=
+# RPC for the payment chain (not the launch chain), for luaf endpoint-income.
+X402_RPC_URL=
 `;
 
 function cmdInit(): void {
@@ -346,6 +360,38 @@ async function cmdIncome(): Promise<void> {
   console.log(`\ntotal ETH income: ${total} wei`);
 }
 
+async function cmdEndpointIncome(): Promise<void> {
+  const dep = loadLauncherDeployment();
+  const cfg = resolveEndpointConfig({ splitter: dep.contracts.creatorSplitter, launchChainId: dep.chainId });
+  const chainId = cfg.chainId ?? chainIdForNetwork(cfg.network);
+  if (chainId === null) fail(`X402_NETWORK=${cfg.network} is not a network this build can resolve to a chain id`);
+  const rpcUrl = env("X402_RPC_URL");
+  if (!rpcUrl) fail(`set --x402-rpc (or X402_RPC_URL): payments settle on chain ${chainId}, not the launch chain`);
+
+  const income = await collectEndpointIncome({
+    rpcUrl,
+    chainId,
+    asset: cfg.asset as `0x${string}`,
+    payTo: cfg.payTo as `0x${string}`,
+    fromBlock: env("X402_FROM_BLOCK") ? BigInt(env("X402_FROM_BLOCK")!) : undefined,
+  });
+  const verdict = concentration(income);
+  const decimals = Number(env("X402_ASSET_DECIMALS", "6"));
+
+  console.log(`endpoint revenue, paid to ${income.payTo} on chain ${income.chainId}`);
+  console.log(`  asset:    ${income.asset}`);
+  console.log(`  received: ${formatAtomic(income.totalAtomic, decimals)} over ${income.payments} payment(s)`);
+  console.log(`  payers:   ${income.uniquePayers}`);
+  if (verdict.topPayerShare !== null) {
+    console.log(`  largest:  ${formatAtomic(income.largestPayerAtomic, decimals)} (${(verdict.topPayerShare * 100).toFixed(0)}%)`);
+  }
+  console.log(`  verdict:  ${verdict.isMarket ? "a market" : "not yet a market"} \u2014 ${verdict.note}`);
+  console.log(
+    "\nThis is the only income here that is not a transfer between traders. Curve fees, pool tolls\n" +
+      "and router fees are all shares of value produced elsewhere; `luaf income` reports those.",
+  );
+}
+
 function cmdProfiles(): void {
   for (const id of listProfiles()) {
     const p = loadProfile(id);
@@ -372,6 +418,7 @@ const HELP = `luaf — design an autonomous unit, launch it as a coin, charge fo
   luaf run [--design-only]   one pass: brief, research, design, validate, launch, bundle
   luaf persistent            loop under selection until the income target or the launch cap
   luaf income                what past launches have earned, per coin and per spec
+  luaf endpoint-income       what the paid endpoints have been paid, and by how many
   luaf profiles              list the designer profiles
   luaf format                print the format key of the configured spec
 
@@ -382,6 +429,7 @@ Common flags (each sets the matching environment variable):
   --max-steps <n>      --out-dir <path>       --model <id>
   --target-eth <eth>   --max-launches <n>     --population <path>
   --aggregator <url>   --max-open <n>         --min-graduation <0..1>
+  --x402-rpc <url>     --pay-to <address>
   --dry-run | --no-dry-run
 
 Nothing is signed unless --no-dry-run is passed. A dry run still simulates every
@@ -400,6 +448,8 @@ async function main(): Promise<void> {
       return cmdPersistent();
     case "income":
       return cmdIncome();
+    case "endpoint-income":
+      return cmdEndpointIncome();
     case "profiles":
       return cmdProfiles();
     case "format":

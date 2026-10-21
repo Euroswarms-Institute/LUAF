@@ -1,6 +1,7 @@
 export * from "./absorption.js";
 export * from "./config.js";
 export * from "./designer.js";
+export * from "./endpointIncome.js";
 export * from "./income.js";
 export * from "./llm.js";
 export * from "./payload.js";

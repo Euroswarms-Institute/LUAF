@@ -2,9 +2,16 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { endpointConfigFromEnv, writeBundle, type EndpointConfig } from "./endpoint.js";
+import {
+  chainIdForNetwork,
+  endpointConfigFromEnv,
+  EndpointConfigError,
+  resolveEndpointConfig,
+  writeBundle,
+  type EndpointConfig,
+} from "./endpoint.js";
 import type { Product } from "../payload.js";
 
 const product: Product = {
@@ -128,5 +135,89 @@ describe("the paid endpoint bundle", () => {
     expect(cfg.network).toBe("base");
     expect(cfg.priceAtomic).toBe("10000");
     expect(cfg.asset.toLowerCase()).toBe("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
+  });
+});
+
+describe("who the endpoint pays", () => {
+  // Endpoint revenue is the only income here that is not a transfer between
+  // traders, so addressing it wrongly is the costliest mistake available.
+  const SPLITTER = "0x3333333333333333333333333333333333333333";
+  const MINE = "0x4444444444444444444444444444444444444444";
+  const LAUNCH_CHAIN = 4663;
+
+  const clean = () => {
+    for (const k of Object.keys(process.env)) if (k.startsWith("X402_")) delete process.env[k];
+  };
+
+  beforeEach(clean);
+  afterEach(clean);
+
+  it("maps the networks it knows and admits the ones it does not", () => {
+    expect(chainIdForNetwork("base")).toBe(8453);
+    expect(chainIdForNetwork("BASE")).toBe(8453);
+    expect(chainIdForNetwork("base-sepolia")).toBe(84532);
+    // Unknown must be null, not a guess: a wrong chain id here burns money.
+    expect(chainIdForNetwork("robinhood")).toBeNull();
+    expect(chainIdForNetwork("")).toBeNull();
+  });
+
+  it("refuses to pay the splitter on a chain it does not exist on", () => {
+    // The default network is Base; the splitter is a contract on Robinhood.
+    expect(() => resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN })).toThrow(
+      EndpointConfigError,
+    );
+    expect(() => resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN })).toThrow(
+      /has no private key, so paying it there would burn every payment/,
+    );
+  });
+
+  it("names both the fix and the cause in the refusal", () => {
+    try {
+      resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN });
+      expect.unreachable();
+    } catch (e) {
+      const msg = (e as Error).message;
+      expect(msg).toContain(SPLITTER);
+      expect(msg).toContain("chain 4663");
+      expect(msg).toContain("chain 8453");
+      expect(msg).toMatch(/X402_PAY_TO/);
+    }
+  });
+
+  it("refuses an unrecognised network just as firmly", () => {
+    process.env.X402_NETWORK = "robinhood";
+    expect(() => resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN })).toThrow(
+      /unrecognised network/,
+    );
+  });
+
+  it("allows the splitter when the payment network is its own chain", () => {
+    process.env.X402_NETWORK = "base";
+    const cfg = resolveEndpointConfig({ splitter: SPLITTER, launchChainId: 8453 });
+    expect(cfg.payTo).toBe(SPLITTER);
+    expect(cfg.chainId).toBe(8453);
+  });
+
+  it("takes an explicit recipient on the payment network", () => {
+    process.env.X402_PAY_TO = MINE;
+    const cfg = resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN });
+    expect(cfg.payTo).toBe(MINE);
+    expect(cfg.network).toBe("base");
+  });
+
+  it("rejects a recipient that is not an address, or is the zero address", () => {
+    process.env.X402_PAY_TO = "not-an-address";
+    expect(() => resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN })).toThrow(/must be an address/);
+    process.env.X402_PAY_TO = `0x${"0".repeat(40)}`;
+    expect(() => resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN })).toThrow(/zero address/);
+  });
+
+  it("validates an override too, rather than trusting the caller", () => {
+    const bad = { ...endpoint, payTo: SPLITTER, chainId: 8453 };
+    expect(() =>
+      resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN, override: bad }),
+    ).toThrow(EndpointConfigError);
+    const good = { ...endpoint, payTo: MINE, chainId: 8453 };
+    expect(resolveEndpointConfig({ splitter: SPLITTER, launchChainId: LAUNCH_CHAIN, override: good }).payTo).toBe(MINE);
   });
 });

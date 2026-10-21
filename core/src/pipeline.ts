@@ -15,7 +15,7 @@ import { loadProfile, type Profile } from "./profiles.js";
 import { research, type Snippet } from "./research.js";
 import { validate, type ValidateResult } from "./validate.js";
 import { publish, type PublishResult } from "./publish/evm.js";
-import { endpointConfigFromEnv, writeBundle, type BundleResult, type EndpointConfig } from "./publish/endpoint.js";
+import { resolveEndpointConfig, writeBundle, type BundleResult, type EndpointConfig } from "./publish/endpoint.js";
 import { specId, type LaunchSpec } from "./spec.js";
 
 export class PipelineError extends Error {}
@@ -29,8 +29,9 @@ export interface PipelineRequest {
   ethUsd8: bigint;
   /** Skip the chain entirely: design and validate only. */
   designOnly?: boolean;
-  /** Where the paid endpoint sends its revenue. Defaults to the creator
-   *  splitter, so endpoint income splits the same 90/10 as creator fees. */
+  /** Where the paid endpoint sends its revenue. Left unset, it resolves from
+   *  the environment: the creator splitter when the payment network settles on
+   *  the launch chain, else X402_PAY_TO. */
   endpoint?: EndpointConfig;
   log?: (line: string) => void;
   signal?: AbortSignal;
@@ -147,9 +148,15 @@ export async function runOnce(req: PipelineRequest): Promise<PipelineResult> {
     );
   }
 
-  // The endpoint pays to the creator splitter by default, so service revenue
-  // is split on the same terms as the coin's creator fees.
-  const endpoint = req.endpoint ?? endpointConfigFromEnv(req.dep.contracts.creatorSplitter);
+  // The endpoint pays the creator splitter only when the payment network
+  // settles on the chain that splitter was deployed to; otherwise an explicit
+  // recipient is required. Paying a contract address on a chain where it has
+  // no code is a burn, not a split.
+  const endpoint = resolveEndpointConfig({
+    splitter: req.dep.contracts.creatorSplitter,
+    launchChainId: req.dep.chainId,
+    override: req.endpoint,
+  });
   result.bundle = writeBundle({
     product,
     dir: join(runDir, "endpoint"),
