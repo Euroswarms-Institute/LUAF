@@ -25,12 +25,13 @@ import {
   keccak256,
   concatHex,
   parseAbi,
-  defineChain,
   type Address,
   type Hex,
   type PublicClient,
   type WalletClient,
 } from "viem";
+
+import { chainFor } from "../chain.js";
 import { privateKeyToAccount } from "viem/accounts";
 
 import type { LauncherDeployment, RunConfig } from "../config.js";
@@ -188,15 +189,6 @@ export function buildMetadata(product: Product, extra: Record<string, string> = 
   return text;
 }
 
-function chainFor(dep: LauncherDeployment, rpcUrl: string) {
-  return defineChain({
-    id: dep.chainId,
-    name: `chain-${dep.chainId}`,
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [rpcUrl] } },
-  });
-}
-
 export interface PublishRequest {
   spec: LaunchSpec;
   product: Product;
@@ -230,7 +222,7 @@ export async function publish(req: PublishRequest): Promise<PublishResult> {
     throw new PublishError(`spec is for chain ${spec.chainId}, deployment is for ${dep.chainId}`);
   }
 
-  const chain = chainFor(dep, run.rpcUrl);
+  const chain = chainFor(dep.chainId, run.rpcUrl);
   const publicClient = createPublicClient({ chain, transport: http(run.rpcUrl) }) as PublicClient;
   const net = await publicClient.getChainId();
   if (net !== dep.chainId) {

@@ -1,13 +1,20 @@
 /** The persistent loop, as a worker the service starts and stops.
  *
  *  As a CLI command this was a process you watched. As infrastructure it is a
- *  single worker: at most one runs at a time, because two loops breeding
- *  against the same population file would each overwrite the other's
- *  generation and selection would stop meaning anything. */
+ *  single worker per tenant: at most one runs at a time, because two loops
+ *  breeding against the same population file would each overwrite the other's
+ *  generation and selection would stop meaning anything.
+ *
+ *  A running loop holds its tenant's budget reservation — the worst case for
+ *  every launch it is allowed — and gives back the difference when it stops.
+ *  That is why the reservation travels with the loop rather than being settled
+ *  by the route that started it: the route returns in milliseconds and the loop
+ *  runs for hours. */
 
-import { runPersistent, type LauncherDeployment, type LlmConfig, type RunConfig } from "@lucreocracy/core";
+import { runPersistent, type LauncherDeployment, type LaunchSpec, type LlmConfig, type RunConfig } from "@lucreocracy/core";
 
-import { specFromRequest, type RunRequest } from "./request.js";
+import { spentByLoop } from "./spend.js";
+import type { Budget, Reservation } from "./tenants.js";
 
 export interface LoopState {
   running: boolean;
@@ -18,6 +25,7 @@ export interface LoopState {
   stopped?: string;
   note?: string;
   incomeEthWei?: string;
+  spentEthWei?: string;
 }
 
 export interface LoopDeps {
@@ -25,9 +33,9 @@ export interface LoopDeps {
   llm: LlmConfig;
   run: RunConfig;
   ethUsd8: bigint;
-  defaultProfile: string;
   targetEthWei: bigint;
   maxLaunches: number;
+  budget: Budget;
   populationPath?: string;
   aggregatorUrl?: string;
   log?: (line: string) => void;
@@ -43,14 +51,11 @@ export class Loop {
     return { ...this.state };
   }
 
-  start(request: RunRequest): { ok: boolean; message: string } {
+  start(args: { spec: LaunchSpec; reservation?: Reservation; reservedLaunches: number }): {
+    ok: boolean;
+    message: string;
+  } {
     if (this.state.running) return { ok: false, message: "the loop is already running" };
-    const spec = specFromRequest(request, {
-      tenant: this.deps.dep.tenant,
-      chainId: this.deps.dep.chainId,
-      defaultProfile: this.deps.defaultProfile,
-    });
-    if (!spec.ok) return { ok: false, message: spec.error };
 
     const controller = new AbortController();
     this.controller = controller;
@@ -60,7 +65,7 @@ export class Loop {
     };
 
     void runPersistent({
-      seed: spec.value,
+      seed: args.spec,
       dep: this.deps.dep,
       llm: this.deps.llm,
       run: this.deps.run,
@@ -73,6 +78,10 @@ export class Loop {
       signal: controller.signal,
     })
       .then((result) => {
+        const spent = spentByLoop(result);
+        if (args.reservation) {
+          this.deps.budget.settle(args.reservation, spent.wei, spent.launches, args.reservedLaunches);
+        }
         this.state = {
           running: false,
           startedAt: this.state.startedAt,
@@ -80,6 +89,7 @@ export class Loop {
           launches: result.launches,
           stopped: result.stopped,
           incomeEthWei: result.incomeEthWei.toString(),
+          spentEthWei: spent.wei.toString(),
           note:
             result.stopped === "glutted"
               ? "stopped because the market stopped absorbing, not because it ran out of work"
@@ -87,6 +97,19 @@ export class Loop {
         };
       })
       .catch((e: unknown) => {
+        // The loop threw, so how much it signed for is not known from its
+        // result. Charge the launches it reported and keep the rest reserved
+        // until the ledger is reconciled against the chain; refunding a run
+        // that may have launched is the one direction that costs us ETH.
+        if (args.reservation) {
+          const launches = this.state.launches;
+          this.deps.budget.settle(
+            args.reservation,
+            args.reservation.wei,
+            Math.max(launches, 1),
+            args.reservedLaunches,
+          );
+        }
         this.state = {
           running: false,
           startedAt: this.state.startedAt,

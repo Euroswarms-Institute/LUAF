@@ -66,18 +66,49 @@ rather than launches.
 ```bash
 npm install
 npm run compile                 # vendored venture contracts + Launcher
-npm test                        # 7 contract tests, 57 core tests
+npm test                        # 7 contract, 117 core, 47 service
 
 cp .env.example .env             # then fill it in
+cp service/tenants.example.json tenants.json   # one entry per tenant
 npm start                        # the service, on :8080
 
 curl localhost:8080/health                                   # open
-curl -H "Authorization: Bearer $LUCRE_API_TOKEN" localhost:8080/ready
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/ready   # that tenant's view
 ```
 
-Nothing is signed without `--no-dry-run`. A dry run still simulates the launch against the real
-factory, so it fails for the same reasons a live one would — a paused factory, an ETH/USD price
-outside the deployed band, a first buy over the launch-window cap.
+A dry run still simulates the launch against the real factory, so it fails for the same reasons a
+live one would — a paused factory, an ETH/USD price outside the deployed band, a first buy over the
+launch-window cap.
+
+## Who it works for, and how far
+
+One process serves every tenant in the grant file. The token decides which: a request may not name
+its tenant, because its credential already did and a caller cannot edit their own credential. Each
+grant gets its own deployment, run directory, job history, loop and budget.
+
+Three things must line up before anything is signed:
+
+| | |
+| --- | --- |
+| the server | started with `LUCRE_DRY_RUN=0` and an operator key |
+| the grant | `"maySign": true`, and within its launch and spend caps |
+| the request | `"live": true` |
+
+Any one missing is a dry run, and a grant can only narrow what the server may do — `maySign` on a
+dry-run server is still a dry run. A website bug that forgets the field costs nothing.
+
+The caps are not bureaucracy. One operator key signs for every tenant, so a scope without a budget
+is not a narrowing at all: a tenant who can ask for launches without bound can spend our ETH
+without bound. So a grant carries `maxLaunches` and `maxSpendWei`, debited **before** the work
+starts — two requests in flight must not be checked against the same balance — and refunded only
+once we know nothing was signed. On a failure the operator's nonce decides: unmoved means nothing
+was broadcast and the reservation comes back; moved, or unreadable, and the spend stays debited,
+because the other direction gives away ETH. A loop reserves the gene pool's largest opening buy
+times the launches it is allowed, since its later specs do not exist yet, and gives the difference
+back when it stops.
+
+The ledger is on disk, so a restart does not hand a tenant a fresh allowance, and a ledger that
+cannot be read refuses to spend rather than reading as zero.
 
 ## Layout
 
@@ -92,7 +123,9 @@ outside the deployed band, a first buy over the launch-window cap.
 | `core/src/income.ts` | fee events per coin and per spec |
 | `core/src/publish/evm.ts` | salt mining and the launch |
 | `core/src/publish/endpoint.ts` | the x402 bundle |
-| `service/src/routes.ts` | the HTTP surface the website calls |
+| `service/src/routes.ts` | the HTTP surface the website calls, scoped to the tenant its token names |
+| `service/src/tenants.ts` | the grants, and the budget each one spends against |
+| `service/src/spend.ts` | what a finished run really cost |
 | `service/src/request.ts` | what a caller may ask for, and what the server keeps |
 | `core/data/profiles/` | the designer's prompt sets, one directory per profile |
 

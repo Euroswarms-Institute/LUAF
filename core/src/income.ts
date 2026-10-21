@@ -18,11 +18,12 @@ import {
   createPublicClient,
   http,
   parseAbi,
-  defineChain,
   type Address,
   type Hex,
   type PublicClient,
 } from "viem";
+
+import { chainFor } from "./chain.js";
 
 import type { LauncherDeployment } from "./config.js";
 
@@ -100,15 +101,6 @@ export interface IncomeOptions {
   chunk?: bigint;
 }
 
-function chainFor(dep: LauncherDeployment, rpcUrl: string) {
-  return defineChain({
-    id: dep.chainId,
-    name: `chain-${dep.chainId}`,
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [rpcUrl] } },
-  });
-}
-
 /** getLogs in pages, because every public endpoint limits the block span. */
 async function pagedLogs<T>(
   client: PublicClient,
@@ -140,7 +132,7 @@ export async function collectIncome(
   rpcUrl: string,
   opts: IncomeOptions = {},
 ): Promise<TokenIncome[]> {
-  const chain = chainFor(dep, rpcUrl);
+  const chain = chainFor(dep.chainId, rpcUrl);
   const client = createPublicClient({ chain, transport: http(rpcUrl) }) as PublicClient;
   const net = await client.getChainId();
   if (net !== dep.chainId) throw new Error(`RPC serves chain ${net}, deployment is for ${dep.chainId}`);

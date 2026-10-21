@@ -7,6 +7,10 @@ contracts/typechain-types/
 .env.*
 !.env.example
 runs/
+# tenant grants: real bearer tokens, never committed
+tenants.json
+tenants.*.json
+!service/tenants.example.json
 # legacy python
 build/
 *.egg-info/

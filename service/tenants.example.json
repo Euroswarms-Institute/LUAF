@@ -1,0 +1,16 @@
+[
+  {
+    "slug": "acme",
+    "chainId": 4663,
+    "token": "replace-with-32-or-more-random-characters",
+    "maySign": true,
+    "maxLaunches": 200,
+    "maxSpendWei": "2000000000000000000"
+  },
+  {
+    "slug": "zenith",
+    "chainId": 46630,
+    "token": "a-different-token-never-shared-between-grants",
+    "maySign": false
+  }
+]

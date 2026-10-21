@@ -1,18 +1,21 @@
 /** The HTTP surface the website's backend calls.
  *
- *  This replaces the CLI one command at a time, with one deliberate
- *  difference. The CLI's real safeguard against an accidental live launch was
- *  not `--no-dry-run`; it was that you had to be on the machine with a shell.
- *  An HTTP endpoint hands that away to anyone holding a token, so signing is
- *  rebuilt to need **two independent keys turning**:
+ *  This replaces the CLI, with two deliberate differences.
  *
- *    1. the server must have been started to sign at all (LUCRE_DRY_RUN=0 with
- *       an operator key), and
- *    2. the request must explicitly ask for it (`"live": true`).
+ *  First, signing. The CLI's real safeguard against an accidental live launch
+ *  was not `--no-dry-run`; it was that you had to be on the machine with a
+ *  shell. An HTTP endpoint hands that away to anyone holding a token, so
+ *  signing is rebuilt to need **three things to line up**: the server was
+ *  started to sign at all (LUCRE_DRY_RUN=0 with an operator key), the tenant's
+ *  grant permits it, and the request explicitly asks for it. Any one missing
+ *  is a dry run. A request cannot talk a read-only server into signing, and a
+ *  signing server does not sign by default — so a website bug that forgets a
+ *  field costs nothing.
  *
- *  Either alone is a dry run. A request cannot talk a read-only server into
- *  signing, and a signing server does not sign by default — so a website bug
- *  that forgets a field costs nothing. */
+ *  Second, tenancy. The tenant is resolved from the credential, never from the
+ *  request, and every route below is scoped to that tenant: its deployment,
+ *  its chain, its jobs, its loop, its budget. A token is the whole of a
+ *  caller's authority, and a caller cannot edit their own token. */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 
@@ -25,7 +28,8 @@ import {
   listProfiles,
   loadProfile,
   resolveEndpointConfig,
-  type LauncherDeployment,
+  specId as specIdOf,
+  type LaunchSpec,
   type LlmConfig,
   type PipelineResult,
   type RunConfig,
@@ -33,31 +37,46 @@ import {
 
 import { authorize, type AuthConfig } from "./auth.js";
 import type { Jobs } from "./jobs.js";
-import { parseRunRequest, type RunRequest } from "./request.js";
+import { parseRunRequest, specFromRequest, type RunRequest } from "./request.js";
+import { broadcast, spentByRun, worstCasePerLaunch } from "./spend.js";
+import type { Reservation, TenantRuntime } from "./tenants.js";
 
-export interface Deps {
-  auth: AuthConfig;
+/** Everything one tenant needs, kept apart from every other tenant's. */
+export interface TenantService {
+  runtime: TenantRuntime;
   jobs: Jobs;
-  /** Resolved once at startup; a config error should stop the process, not
-   *  surface as a 500 on the first request. */
-  dep: LauncherDeployment;
-  llm: LlmConfig;
-  run: RunConfig;
-  /** ETH/USD, 8dp. Supplied rather than fetched: it sizes the curve's start
-   *  price and the factory checks it against its band. */
-  ethUsd8: bigint;
+  /** Ceiling the loop was configured with, used to size its reservation. */
+  loopMaxLaunches: number;
+  loop: {
+    state(): { running: boolean; startedAt?: number; launches: number; stopped?: string; note?: string };
+    start(args: { spec: LaunchSpec; reservation?: Reservation; reservedLaunches: number }): {
+      ok: boolean;
+      message: string;
+    };
+    stop(): { ok: boolean; message: string };
+  };
   /** Injected so routes can be tested without an LLM or a chain. */
   runPipeline: (args: {
-    request: RunRequest;
+    spec: LaunchSpec;
     live: boolean;
+    designOnly: boolean;
     log: (line: string) => void;
     signal: AbortSignal;
   }) => Promise<PipelineResult>;
-  loop: {
-    state(): { running: boolean; startedAt?: number; launches: number; stopped?: string; note?: string };
-    start(request: RunRequest): { ok: boolean; message: string };
-    stop(): { ok: boolean; message: string };
-  };
+  /** The operator's transaction count, used to tell a run that broadcast from
+   *  one that failed before it did. Undefined when it cannot be read. */
+  operatorNonce: () => Promise<number | undefined>;
+}
+
+export interface Deps {
+  auth: AuthConfig;
+  tenants: Map<string, TenantService>;
+  llm: LlmConfig;
+  /** The profile a request that names none gets. */
+  defaultProfile: string;
+  /** ETH/USD, 8dp. Supplied rather than fetched: it sizes the curve's start
+   *  price and the factory checks it against its band. */
+  ethUsd8: bigint;
 }
 
 interface Reply {
@@ -97,20 +116,20 @@ export function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** Whether this server is permitted to sign at all. The first of the two keys. */
+/** Whether this server, as narrowed for this tenant, may sign at all. */
 export function serverCanSign(run: RunConfig): boolean {
   return !run.dryRun && !!run.privateKey;
 }
 
-/** Resolve the two-key rule for one request. */
+/** Resolve for one request whether it signs. */
 export function resolveLive(request: RunRequest, run: RunConfig): { live: boolean; refusal?: string } {
   if (!request.live) return { live: false };
   if (!serverCanSign(run)) {
     return {
       live: false,
       refusal:
-        "this server is not configured to sign: it was started in dry-run mode, or without an operator key. " +
-        "A request cannot grant itself signing authority.",
+        "this server is not configured to sign for this tenant: it was started in dry-run mode, without an " +
+        "operator key, or the tenant's grant does not permit signing. A request cannot grant itself signing authority.",
     };
   }
   return { live: true };
@@ -133,9 +152,16 @@ export async function handle(req: IncomingMessage, res: ServerResponse, deps: De
     json(res, bad(auth.status, auth.message));
     return;
   }
+  const tenant = deps.tenants.get(auth.slug);
+  if (!tenant) {
+    // A valid token with no tenant behind it is our misconfiguration, not the
+    // caller's mistake, and saying so plainly is what makes it fixable.
+    json(res, bad(503, `the grant for ${auth.slug} did not load, so this token cannot be served`));
+    return;
+  }
 
   try {
-    json(res, await route(method, path, url, req, deps));
+    json(res, await route(method, path, url, req, deps, tenant));
   } catch (e) {
     json(res, bad(500, e instanceof Error ? e.message : String(e)));
   }
@@ -147,21 +173,26 @@ async function route(
   url: URL,
   req: IncomingMessage,
   deps: Deps,
+  t: TenantService,
 ): Promise<Reply> {
+  const { runtime } = t;
+  const { dep, run, budget, grant } = runtime;
+
   // --- diagnostics -------------------------------------------------------
   if (method === "GET" && path === "/ready") {
-    const profiles = listProfiles();
     return ok({
       ok: true,
-      tenant: deps.dep.tenant,
-      chainId: deps.dep.chainId,
-      launcher: deps.dep.contracts.launcher,
-      factory: deps.dep.contracts.factory,
+      tenant: dep.tenant,
+      chainId: dep.chainId,
+      launcher: dep.contracts.launcher,
+      factory: dep.contracts.factory,
       model: deps.llm.model,
-      profiles: profiles.length,
-      // The single most important fact about this deployment.
-      canSign: serverCanSign(deps.run),
-      loop: deps.loop.state(),
+      profiles: listProfiles().length,
+      // The two most important facts about this grant.
+      canSign: serverCanSign(run),
+      maySign: grant.maySign,
+      budget: budget.view(),
+      loop: t.loop.state(),
     });
   }
 
@@ -174,59 +205,119 @@ async function route(
     });
   }
 
+  if (method === "GET" && path === "/budget") return ok(budget.view());
+
   // --- runs --------------------------------------------------------------
   if (method === "POST" && path === "/runs") {
     const parsed = parseRunRequest(await readBody(req));
     if (!parsed.ok) return bad(400, parsed.error);
-    const { live, refusal } = resolveLive(parsed.value, deps.run);
+    const { live, refusal } = resolveLive(parsed.value, run);
     if (refusal) return bad(403, refusal);
-    const request = parsed.value;
-    const job = deps.jobs.start({
-      live,
-      run: ({ log, signal }) => deps.runPipeline({ request, live, log, signal }),
+
+    // Build the spec here rather than inside the job: a spec the factory would
+    // reject is the caller's mistake, and belongs in the reply, not in a log.
+    const spec = specFromRequest(parsed.value, {
+      tenant: dep.tenant,
+      chainId: dep.chainId,
+      defaultProfile: deps.defaultProfile,
     });
-    return { status: 202, body: { id: job.id, state: job.state, live: job.live } };
+    if (!spec.ok) return bad(400, spec.error);
+    const designOnly = parsed.value.designOnly;
+
+    // Debit the grant before the work starts, so two requests in flight cannot
+    // both be checked against the same balance.
+    let handle: Reservation | undefined;
+    if (live && !designOnly) {
+      const reserved = budget.reserve(spec.value.firstBuyWei);
+      if (!reserved.ok) return bad(402, reserved.reason);
+      handle = reserved.handle;
+    }
+
+    const nonceBefore = handle ? await t.operatorNonce() : undefined;
+    const job = t.jobs.start({
+      live: live && !designOnly,
+      run: async ({ log, signal }) => {
+        try {
+          const result = await t.runPipeline({ spec: spec.value, live, designOnly, log, signal });
+          if (handle) {
+            const real = spentByRun(result);
+            budget.settle(handle, real.wei, real.launches);
+          }
+          return result;
+        } catch (e) {
+          if (handle) {
+            // Ask the chain whether anything was sent before refunding.
+            const after = await t.operatorNonce();
+            if (broadcast(nonceBefore, after)) budget.settle(handle, handle.wei, 1);
+            else budget.release(handle);
+          }
+          throw e;
+        }
+      },
+    });
+    return { status: 202, body: { id: job.id, state: job.state, live: job.live, specId: specIdOf(spec.value) } };
   }
 
   if (method === "GET" && path === "/runs") {
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 20) || 20));
-    return ok({ runs: deps.jobs.list(limit) });
+    return ok({ runs: t.jobs.list(limit) });
   }
 
   const runMatch = /^\/runs\/([0-9a-fA-F-]{36})$/.exec(path);
   if (method === "GET" && runMatch) {
-    const job = deps.jobs.get(runMatch[1]!);
+    const job = t.jobs.get(runMatch[1]!);
     if (!job) return bad(404, "no such run");
-    return ok(deps.jobs.view(job));
+    return ok(t.jobs.view(job));
   }
 
   const cancelMatch = /^\/runs\/([0-9a-fA-F-]{36})\/cancel$/.exec(path);
   if (method === "POST" && cancelMatch) {
     const id = cancelMatch[1]!;
-    if (!deps.jobs.get(id)) return bad(404, "no such run");
-    return ok({ cancelled: deps.jobs.cancel(id) });
+    if (!t.jobs.get(id)) return bad(404, "no such run");
+    return ok({ cancelled: t.jobs.cancel(id) });
   }
 
   // --- the loop ----------------------------------------------------------
-  if (method === "GET" && path === "/loop") return ok(deps.loop.state());
+  if (method === "GET" && path === "/loop") return ok(t.loop.state());
 
   if (method === "POST" && path === "/loop/start") {
     const parsed = parseRunRequest(await readBody(req));
     if (!parsed.ok) return bad(400, parsed.error);
-    const { refusal } = resolveLive(parsed.value, deps.run);
+    const { live, refusal } = resolveLive(parsed.value, run);
     if (refusal) return bad(403, refusal);
-    const started = deps.loop.start(parsed.value);
-    return started.ok ? ok({ ...deps.loop.state(), message: started.message }) : bad(409, started.message);
+    const spec = specFromRequest(parsed.value, {
+      tenant: dep.tenant,
+      chainId: dep.chainId,
+      defaultProfile: deps.defaultProfile,
+    });
+    if (!spec.ok) return bad(400, spec.error);
+
+    // A loop's later specs do not exist yet, so it reserves its worst case up
+    // front: the gene pool's largest opening buy, times the launches it is
+    // allowed. Whatever it does not spend is refunded when it stops.
+    let handle: Reservation | undefined;
+    const reservedLaunches = t.loopMaxLaunches;
+    if (live) {
+      const reserved = budget.reserve(worstCasePerLaunch(spec.value) * BigInt(reservedLaunches), reservedLaunches);
+      if (!reserved.ok) return bad(402, reserved.reason);
+      handle = reserved.handle;
+    }
+    const started = t.loop.start({ spec: spec.value, reservation: handle, reservedLaunches });
+    if (!started.ok) {
+      if (handle) budget.release(handle, reservedLaunches);
+      return bad(409, started.message);
+    }
+    return ok({ ...t.loop.state(), message: started.message, budget: budget.view() });
   }
 
   if (method === "POST" && path === "/loop/stop") {
-    const stopped = deps.loop.stop();
-    return stopped.ok ? ok({ ...deps.loop.state(), message: stopped.message }) : bad(409, stopped.message);
+    const stopped = t.loop.stop();
+    return stopped.ok ? ok({ ...t.loop.state(), message: stopped.message }) : bad(409, stopped.message);
   }
 
   // --- what it earned ----------------------------------------------------
   if (method === "GET" && path === "/income") {
-    const rows = await collectIncome(deps.dep, deps.run.rpcUrl);
+    const rows = await collectIncome(dep, run.rpcUrl);
     let total = 0n;
     const specs = [...bySpec(rows).values()].map((s) => {
       total += s.totalEthWei;
@@ -258,8 +349,8 @@ async function route(
 
   if (method === "GET" && path === "/endpoint-income") {
     const cfg = resolveEndpointConfig({
-      splitter: deps.dep.contracts.creatorSplitter,
-      launchChainId: deps.dep.chainId,
+      splitter: dep.contracts.creatorSplitter,
+      launchChainId: dep.chainId,
     });
     const chainId = cfg.chainId ?? chainIdForNetwork(cfg.network);
     if (chainId === null) return bad(400, `X402_NETWORK=${cfg.network} resolves to no known chain id`);

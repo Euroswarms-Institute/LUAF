@@ -1,4 +1,5 @@
 export * from "./absorption.js";
+export * from "./chain.js";
 export * from "./config.js";
 export * from "./designer.js";
 export * from "./endpointIncome.js";
