@@ -1,9 +1,10 @@
 /** Minimal OpenAI-compatible chat client.
  *
- *  The legacy pipeline reached the same endpoint three ways (a Swarms Agent, a
- *  ReAct loop, and a direct POST) and defaulted to the direct one. Only the
- *  direct path survives: the designer is a single long completion, so an agent
- *  framework bought nothing and pinned an extra dependency. */
+ *  The old pipeline reached the same endpoint three ways: through an agent
+ *  framework, through a ReAct loop, and by a direct POST. It defaulted to the
+ *  direct one, and only that survives. The designer is a single long
+ *  completion, so a framework bought nothing and pinned a dependency whose
+ *  outages became ours. */
 
 import type { LlmConfig } from "./config.js";
 

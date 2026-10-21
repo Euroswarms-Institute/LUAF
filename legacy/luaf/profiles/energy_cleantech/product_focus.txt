@@ -1,1 +1,0 @@
-Product focus: Energy and cleantech. Revenue via trading, grid data, emissions. Backend-only.

@@ -1,1 +1,0 @@
-Product focus: Quant research. Revenue via alpha, signals, backtesting. Backend-only.

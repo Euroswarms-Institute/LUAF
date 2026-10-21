@@ -65,9 +65,9 @@ export const DEFAULT_TOPIC_PROMPT =
   "backends. Reply with only that one sentence, no quotes, no explanation, no bullet points.";
 
 /** The output contract. Ported from the Python pipeline's publication
- *  fragment, with two changes: the Swarms SDK is no longer a mandatory
- *  dependency (that target is gone), and `is_free` is dropped because it only
- *  ever meant something to the marketplace listing. */
+ *  fragment, with two changes: no agent framework is a mandatory dependency
+ *  any more, and `is_free` is dropped because it only ever meant something to
+ *  the marketplace listing that is now gone. */
 export const OUTPUT_FORMAT_FRAGMENT = `
 ## JSON output format (mandatory)
 Your entire response must be one JSON object: no characters before the opening { or after the closing }.

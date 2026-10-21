@@ -1,1 +1,0 @@
-Product focus: Aerospace and defense. Revenue via simulation, telemetry, procurement. Backend-only.

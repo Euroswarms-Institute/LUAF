@@ -1,1 +1,0 @@
-Product focus: EdTech backend. Revenue via assessment, content APIs, LTI. Backend-only.

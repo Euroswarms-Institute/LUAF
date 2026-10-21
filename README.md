@@ -3,12 +3,15 @@
 **One command: a brief becomes a working autonomous unit, a coin on a launchpad we hold, and a paid
 endpoint.** Selection then decides what gets launched next, from what the last launches actually earned.
 
-Formerly a Python pipeline that published to swarms.world and tokenized on Solana. Both of those
-rented someone else's ground: the listing, the price and the billing relationship belonged to the
-platform, and the Solana path required handing a raw wallet key to a remote API. This version
-launches into [DoublePlus](https://github.com/IlumCI/DoublePlus) venture stacks, where the coin's
-creator is a contract we deploy and the fees are split by code. The Python tree is kept under
-`legacy/` for reference.
+Formerly a Python pipeline that published to a third-party agent marketplace and tokenized on
+Solana. Both rented someone else's ground: the listing, the price and the billing relationship
+belonged to the platform, its outages became ours, and the Solana path required handing a raw wallet
+key to a remote API. Generated agents were also forced to import that platform's SDK, so every
+launched unit inherited its dependency.
+
+None of that is left. This version launches into [DoublePlus](https://github.com/IlumCI/DoublePlus)
+venture stacks, where the coin's creator is a contract we deploy and the fees are split by code, and
+the agents it writes depend on nothing but what their own task needs.
 
 ---
 
@@ -78,7 +81,7 @@ outside the deployed band, a first buy over the launch-window cap.
 | `core/src/publish/evm.ts` | salt mining and the launch |
 | `core/src/publish/endpoint.ts` | the x402 bundle |
 | `cli/src/main.ts` | the command line |
-| `legacy/` | the Python pipeline, for reference |
+| `core/data/profiles/` | the designer's prompt sets, one directory per profile |
 
 ## Deploying for a tenant
 

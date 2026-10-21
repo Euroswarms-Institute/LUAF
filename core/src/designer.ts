@@ -1,8 +1,8 @@
 /** The designer: brief plus research in, one agent out.
  *
  *  A port of `get_agent_payload_from_llm` in the Python pipeline, minus the
- *  Swarms Agent and ReAct wrappers it could optionally route through. It keeps
- *  the part that mattered: a revision loop that feeds the previous attempt's
+ *  framework and ReAct wrappers it could optionally route through. It keeps the
+ *  part that mattered: a revision loop that feeds the previous attempt's
  *  complaints back in, so a near miss is corrected instead of rerolled. */
 
 import { chat, type Message } from "./llm.js";

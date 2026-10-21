@@ -1,1 +1,0 @@
-Product focus: B2B SaaS backend. Revenue via API, usage-based billing, webhooks. Backend-only.

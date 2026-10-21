@@ -1,1 +1,0 @@
-Product focus: Blue team and detection. Revenue via API, feeds, managed detection. Backend-only.
