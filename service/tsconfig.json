@@ -5,10 +5,12 @@
     "moduleResolution": "nodenext",
     "outDir": "dist",
     "rootDir": "src",
+    "declaration": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

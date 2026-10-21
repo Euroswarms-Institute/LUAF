@@ -2,15 +2,16 @@
   "name": "lucreocracy",
   "version": "2.0.0",
   "private": true,
-  "description": "Launch foundry: brief -> research -> design -> validate -> launch into tenant venture factories, with selection on fee income. TypeScript pipeline + Solidity Launcher.",
+  "description": "Launch foundry: brief -> research -> design -> validate -> launch into tenant venture factories, with selection on fee income. TypeScript service + Solidity Launcher.",
   "workspaces": [
     "contracts",
     "core",
-    "cli"
+    "service"
   ],
   "scripts": {
-    "build": "npm run build -w core && npm run build -w cli",
-    "test": "npm run test -w contracts && npm run test -w core",
-    "compile": "npm run compile -w contracts"
+    "build": "npm run build -w core && npm run build -w service",
+    "test": "npm run test -w contracts && npm run test -w core && npm run test -w service",
+    "compile": "npm run compile -w contracts",
+    "start": "npm run start -w service"
   }
 }

@@ -13,7 +13,7 @@ None of that is left. This version launches into [DoublePlus](https://github.com
 venture stacks, where the coin's creator is a contract we deploy and the fees are split by code, and
 the agents it writes depend on nothing but what their own task needs.
 
-The CLI is `lucre`. Formerly LUAF.
+It runs as a service behind the website, not as a tool. Formerly LUAF.
 
 ### The name
 
@@ -68,11 +68,11 @@ npm install
 npm run compile                 # vendored venture contracts + Launcher
 npm test                        # 7 contract tests, 57 core tests
 
-npx lucre init                   # writes a .env to fill in
-npx lucre doctor                 # model, profiles, research, chain
-npx lucre run --design-only      # design and validate, touch no chain
-npx lucre run                    # dry run: simulates the real launch, signs nothing
-npx lucre run --no-dry-run       # signs
+cp .env.example .env             # then fill it in
+npm start                        # the service, on :8080
+
+curl localhost:8080/health                                   # open
+curl -H "Authorization: Bearer $LUCRE_API_TOKEN" localhost:8080/ready
 ```
 
 Nothing is signed without `--no-dry-run`. A dry run still simulates the launch against the real
@@ -92,7 +92,8 @@ outside the deployed band, a first buy over the launch-window cap.
 | `core/src/income.ts` | fee events per coin and per spec |
 | `core/src/publish/evm.ts` | salt mining and the launch |
 | `core/src/publish/endpoint.ts` | the x402 bundle |
-| `cli/src/main.ts` | the command line |
+| `service/src/routes.ts` | the HTTP surface the website calls |
+| `service/src/request.ts` | what a caller may ask for, and what the server keeps |
 | `core/data/profiles/` | the designer's prompt sets, one directory per profile |
 
 ## Deploying for a tenant
@@ -147,7 +148,8 @@ reaper (`--reap-poor`), one-point crossover (`--sex`) and an order-2 mutation mo
 Our own copies are counted exactly. The rest of the market comes from the DoublePlus aggregator:
 
 ```bash
-npx lucre persistent --aggregator http://localhost:8081
+curl -X POST -H "Authorization: Bearer $LUCRE_API_TOKEN" \
+     -H 'content-type: application/json' -d '{}' localhost:8080/loop/start
 ```
 
 Without it the loop sees only our own launches, which is right where we are the only launchpad on a
@@ -161,7 +163,9 @@ The brief is deliberately **not** part of the format. Breeding carries the terms
 buckets, dividend policy, opening buy, profile — and each launch finds its own subject.
 
 ```bash
-npx lucre persistent --target-eth 1 --max-launches 20 --population runs/population.json
+curl -X POST -H "Authorization: Bearer $LUCRE_API_TOKEN" \
+     -H 'content-type: application/json' -d '{}' localhost:8080/loop/start
+curl -H "Authorization: Bearer $LUCRE_API_TOKEN" localhost:8080/loop
 ```
 
 The loop stops on the income target, the launch cap, when selection has reaped everything, or when
@@ -179,8 +183,8 @@ the anarchy of production cannot do.
 
 ## Configuration
 
-Every setting is an environment variable, and every flag sets one, so `.env` and the command line
-are interchangeable. `luaf init` writes the full template. The ones with no sane default:
+Every setting is an environment variable; there are no flags. `.env.example` is the full template.
+The ones with no sane default:
 
 | Variable | Why it has no default |
 | --- | --- |
@@ -215,7 +219,7 @@ this business that isn't a transfer between traders.
 ### Measuring it
 
 ```bash
-npx lucre endpoint-income --x402-rpc https://mainnet.base.org
+curl -H "Authorization: Bearer $LUCRE_API_TOKEN" localhost:8080/endpoint-income
 ```
 
 Payments are read from the asset's own `Transfer` log, not from a facilitator's API: a settled
