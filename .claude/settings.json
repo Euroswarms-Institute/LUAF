@@ -1,15 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "permissions": {
+    "additionalDirectories": [
+      "/home/user/DoublePlus",
+      "/home/user/Abiogenesis"
+    ],
     "deny": [
       "Edit(//home/user/DoublePlus/**)",
       "Edit(//home/user/Abiogenesis/**)",
       "Edit(/home/user/DoublePlus/**)",
       "Edit(/home/user/Abiogenesis/**)",
       "Edit(**/DoublePlus/**)",
-      "Edit(**/Abiogenesis/**)",
-      "Bash(git -C /home/user/DoublePlus *)",
-      "Bash(git -C /home/user/Abiogenesis *)"
+      "Edit(**/Abiogenesis/**)"
     ]
   },
   "hooks": {
@@ -21,7 +23,7 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/guard-reference-repos.sh\"",
             "timeout": 10,
-            "statusMessage": "Checking the reference repos are untouched"
+            "statusMessage": "Checking the reference repos are unchanged"
           }
         ]
       }

@@ -17,15 +17,29 @@ branches in all three committed and pushed nine commits to DoublePlus before
 anyone noticed, which is why the rule is now enforced in code rather than
 remembered.
 
-Two things enforce it, and neither replaces the other:
+**Read them freely.** They are in `additionalDirectories`, so reads are in
+scope and unrestricted: `cat`, `grep`, `git log`, `git -C <repo> show`, copying
+a file *out* of them — all normal, all expected. Nothing here denies a read,
+and nothing should: vendoring out of those trees is part of the work.
 
-- `.claude/settings.json` denies the file-writing tools on those paths. This is
-  deterministic and no shell quoting gets around it.
+Two things stop the writes, and neither replaces the other:
+
+- `.claude/settings.json` denies the file-writing tools on those paths. It
+  denies no reads. This half is deterministic and no shell quoting gets around
+  it.
 - `.claude/hooks/guard-reference-repos.sh` refuses Bash commands that would
-  change them — git writes, redirection, `rm`, `mv`, in-place `sed`, installs.
-  Reads stay frictionless, including copying a file *out* of those trees, which
-  is how the vendored code got here. It is a net rather than a wall: shell
-  cannot be parsed reliably, so treat it as a catch for the ordinary mistake.
+  change them — git subcommands that write, redirection into them, `rm`, `mv`,
+  in-place `sed`, `tee`, installs, and a copy whose *destination* is in them.
+
+  The hook judges each command segment separately and tracks `cd`, because a
+  verb and a path on the same line say nothing about whether that verb targets
+  that path: `mkdir -p <here>/x && cp <reference>/y <here>/x/` is a write here
+  and a read there. Scanning the line as a whole refuses it, which is wrong.
+  There are 53 cases in `.claude/hooks/guard-reference-repos.test.sh` — 27 of
+  them reads that must keep working. Run it after any change to the guard.
+
+  It is a net rather than a wall: shell cannot be parsed reliably, so treat it
+  as a catch for the ordinary mistake, not a boundary.
 
 If something genuinely needs to change in one of those repositories, say so and
 let the person do it. Do not work around the guard.
