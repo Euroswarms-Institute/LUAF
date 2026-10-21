@@ -179,9 +179,11 @@ export async function handle(req: IncomingMessage, res: ServerResponse, deps: De
       "content-length": body.byteLength,
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
-      // The page talks to this origin only and embeds nothing.
+      // The page talks to this origin only and embeds nothing beyond its own
+      // inline icon.
       "content-security-policy":
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+        "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
       "referrer-policy": "no-referrer",
     });
     res.end(body);

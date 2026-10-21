@@ -3,262 +3,361 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<title>Lucreocracy — coins</title>
-<!--
-  Every launchpad's coins in one place, ours and everyone else's.
-  Served by the aggregator at /, read once at startup. Reads only this
-  service's own REST API and follows its WebSocket.
-
-  No web fonts and no CDN: an operator tool for a service on a private network
-  has to render with the machine unplugged.
-
-  Catppuccin Mocha. Flat: content sits on the page, separated by hairlines and
-  space rather than wrapped in boxes. Sans for labels and prose, monospace only
-  where figures and addresses need to line up. Colour carries meaning and
-  nothing else — green is trading, blue is still filling, yellow is a number
-  not to trust, red is broken.
-
-  service/public/console.html uses the same tokens. The two are served by
-  different processes, so the block below is duplicated there; edit both.
--->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22%2320190a%22%2F%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.2%22%20fill%3D%22none%22%20stroke%3D%22%23d8b866%22%20stroke-width%3D%221.2%22%2F%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%222.4%22%20fill%3D%22none%22%20stroke%3D%22%23d8b866%22%20stroke-width%3D%221.6%22%2F%3E%3Cpath%20d%3D%22M8%201.4v2.2M8%2012.4v2.2M1.4%208h2.2M12.4%208h2.2%22%20stroke%3D%22%23d8b866%22%20stroke-width%3D%221.3%22%2F%3E%3C%2Fsvg%3E">
+<title>Lucreocracy</title>
 <style>
   :root {
-    --base: #1e1e2e;
-    --mantle: #181825;
-    --crust: #11111b;
-    --surface0: #313244;
-    --surface1: #45475a;
-    --surface2: #585b70;
-    --overlay0: #6c7086;
-    --overlay1: #7f849c;
-    --subtext0: #a6adc8;
-    --subtext1: #bac2de;
-    --text: #cdd6f4;
-    --blue: #89b4fa;
-    --lavender: #b4befe;
-    --green: #a6e3a1;
-    --yellow: #f9e2af;
-    --peach: #fab387;
-    --red: #f38ba8;
-    --mauve: #cba6f7;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    /* Chrome: brass and ochre. */
+    --frame: #6b5222;
+    --frame-lo: #43330f;
+    --title-a: #b08c3c;
+    --title-b: #85682a;
+    --title-c: #5d4818;
+    --face: #ded3b0;
+    --face-lo: #c9bd96;
+    --face-hi: #f3ecd2;
+    --ink: #2a2318;
+    --ink-soft: #5d5134;
+    --bevel-hi: #fffbe9;
+    --bevel-lo: #8a7c53;
+    --bevel-dk: #5f5533;
+    /* Screens: amber on charcoal. */
+    --screen: #15140f;
+    --screen-lo: #0e0d0a;
+    --screen-rule: #35301f;
+    --glow: #ffc14d;
+    --glow-dim: #a8821f;
+    --read: #e7dcbd;
+    --read-soft: #9c9177;
+    --go: #8fd67a;
+    --wait: #6fb6e8;
+    --warn: #ffd166;
+    --stop: #e8705a;
+    --ui: Tahoma, Verdana, "Segoe UI", Geneva, sans-serif;
+    --mono: "Lucida Console", ui-monospace, Consolas, Menlo, monospace;
   }
   * { box-sizing: border-box; }
-  html { background: var(--base); }
+  html { background: #15150f; }
   body {
     margin: 0;
-    background: var(--base);
-    color: var(--text);
-    font: 14px/1.5 var(--sans);
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 24px; }
-
-  /* --- top line -------------------------------------------------------- */
-  header {
-    border-bottom: 1px solid var(--surface0);
-    background: var(--mantle);
-  }
-  .bar { display: flex; align-items: center; gap: 14px; height: 52px; }
-  .brand { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-  .brand em { font-style: normal; color: var(--overlay1); font-weight: 400; margin-left: 8px; }
-  .bar .fill { flex: 1; }
-  .feed { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--subtext0); }
-  .feed i { width: 7px; height: 7px; border-radius: 50%; background: var(--overlay0); flex: none; }
-  .feed.up i { background: var(--green); }
-  .feed.wait i { background: var(--yellow); }
-  .feed.down i { background: var(--red); }
-
-  /* --- figures: a row of numbers, not a row of cards -------------------- */
-  .figures { display: flex; flex-wrap: wrap; gap: 36px; padding: 22px 0 24px; }
-  .fig .v {
-    display: block;
-    font: 600 24px/1.1 var(--mono);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-  }
-  .fig .k {
-    display: block;
-    margin-top: 5px;
-    font-size: 11px;
-    color: var(--overlay1);
-    letter-spacing: 0.02em;
+    padding: 18px 16px 10px;
+    font: 11px/1.45 var(--ui);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 520px at 50% -140px, #3a3828 0%, #1d1c14 60%, #121109 100%);
+    min-height: 100vh;
   }
 
-  /* --- blocks: a heading, a hairline, content --------------------------- */
-  .block { padding-bottom: 34px; }
-  .head {
+  /* ---- the window ---------------------------------------------------- */
+  .win {
+    max-width: 1180px;
+    margin: 0 auto;
+    background: var(--frame);
+    border-radius: 8px 8px 3px 3px;
+    padding: 3px;
+    box-shadow: 0 1px 0 #8f7334 inset, 0 10px 34px rgba(0, 0, 0, 0.55);
+  }
+  .title {
+    height: 27px;
     display: flex;
-    align-items: baseline;
-    gap: 16px;
-    flex-wrap: wrap;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--surface0);
-    margin-bottom: 2px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px 0 5px;
+    border-radius: 6px 6px 0 0;
+    background: linear-gradient(180deg, var(--title-a) 0%, var(--title-b) 48%, var(--title-c) 52%, #4b3912 100%);
+    box-shadow: 0 1px 0 rgba(255, 240, 200, 0.45) inset;
   }
-  h2 { font-size: 13px; font-weight: 600; margin: 0; color: var(--subtext1); }
-  .head .fill { flex: 1; }
-  .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .title h1 {
+    margin: 0;
+    font: bold 12px/1 var(--ui);
+    color: #fff8e4;
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.6);
+    letter-spacing: 0.01em;
+  }
+  .title .fill { flex: 1; }
+  .title .meta { font-size: 10px; color: #f0e2bd; text-shadow: 1px 1px 1px rgba(0,0,0,.5); }
+  .emblem { width: 16px; height: 16px; display: block; flex: none; }
 
-  /* --- form controls --------------------------------------------------- */
-  select, input {
-    background: var(--surface0);
-    color: var(--text);
-    border: 1px solid transparent;
-    border-radius: 5px;
-    padding: 4px 8px;
-    font: inherit;
-    font-size: 12px;
-    max-width: 100%;
+  .body { background: var(--face); border-radius: 0 0 2px 2px; padding: 7px 8px 8px; }
+
+  /* ---- toolbar ------------------------------------------------------- */
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 4px 4px 7px;
   }
-  select { max-width: 24ch; }
-  input { width: 17ch; }
-  select:hover, input:hover { border-color: var(--surface2); }
-  select:focus, input:focus, button:focus-visible {
-    outline: none;
-    border-color: var(--blue);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 26%, transparent);
-  }
-  input::placeholder { color: var(--overlay0); }
+  .tools .fill { flex: 1; }
+  label.f { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-soft); }
+
   button {
-    background: transparent;
-    color: var(--subtext0);
-    border: 1px solid var(--surface1);
-    border-radius: 5px;
-    padding: 4px 11px;
-    font: inherit;
-    font-size: 12px;
+    font: 11px var(--ui);
+    color: var(--ink);
+    padding: 3px 11px;
+    border: 1px solid;
+    border-color: var(--bevel-hi) var(--bevel-dk) var(--bevel-dk) var(--bevel-hi);
+    border-radius: 3px;
+    background: linear-gradient(180deg, #f6efd6 0%, #e2d7b3 50%, #d3c79f 100%);
     cursor: pointer;
   }
-  button:hover { color: var(--text); border-color: var(--surface2); background: var(--surface0); }
+  button:hover:not(:disabled) { background: linear-gradient(180deg, #fff9e4 0%, #eee2bd 50%, #ddd0a6 100%); }
+  button:active:not(:disabled) {
+    border-color: var(--bevel-dk) var(--bevel-hi) var(--bevel-hi) var(--bevel-dk);
+    background: #cfc298;
+  }
+  button:disabled { color: #9a9070; text-shadow: 1px 1px 0 var(--face-hi); cursor: default; }
+  button:focus-visible { outline: 1px dotted var(--ink); outline-offset: -4px; }
 
-  /* --- tables ---------------------------------------------------------- */
-  .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 7px 16px 7px 0; white-space: nowrap; }
-  th {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--overlay1);
-    padding-top: 10px;
+  select, input {
+    font: 11px var(--ui);
+    color: var(--ink);
+    background: #fffdf2;
+    padding: 2px 4px;
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    border-radius: 0;
+    max-width: 100%;
+  }
+  select { max-width: 22ch; }
+  input { width: 15ch; }
+  select:focus, input:focus { outline: 1px solid #8a6b2f; }
+
+  /* ---- tabs ---------------------------------------------------------- */
+  .tabs { display: flex; gap: 2px; padding: 0 4px; position: relative; z-index: 2; }
+  .tab {
+    font: 11px var(--ui);
+    padding: 4px 14px 5px;
+    color: var(--ink-soft);
+    background: linear-gradient(180deg, #ded2ad 0%, #cabd94 100%);
+    border: 1px solid var(--bevel-lo);
+    border-bottom: 0;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    position: relative;
+    top: 1px;
+  }
+  .tab[aria-selected="true"] {
+    color: var(--ink);
+    font-weight: bold;
+    background: linear-gradient(180deg, #fdf7e2 0%, #ece0bd 100%);
+    top: 0;
     padding-bottom: 7px;
   }
-  td { border-top: 1px solid var(--surface0); font-size: 13px; }
-  tbody tr:hover td { background: var(--mantle); }
-  .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  th.n { text-align: right; }
-  .sym { font-weight: 600; }
-  .sym small { font-weight: 400; color: var(--overlay1); margin-left: 7px; font-size: 12px; }
-  .pad { color: var(--subtext0); font-size: 12px; }
-  .addr { font-family: var(--mono); font-size: 12px; color: var(--overlay1); }
-  .trading { color: var(--green); }
-  .filling { color: var(--blue); }
-  .flag { color: var(--yellow); }
+  .pane {
+    border: 1px solid var(--bevel-lo);
+    background: var(--face-hi);
+    padding: 8px;
+  }
+  .pane[hidden] { display: none; }
 
-  /* --- messages -------------------------------------------------------- */
-  .msg { font-size: 12px; color: var(--overlay1); margin: 12px 0 0; }
-  .msg.warn { color: var(--yellow); }
-  .msg.bad { color: var(--red); }
-  .lede { font-size: 13px; color: var(--subtext0); margin: 10px 0 14px; max-width: 76ch; }
-  footer { border-top: 1px solid var(--surface0); padding: 18px 0 40px; }
-  footer p { font-size: 12px; color: var(--overlay1); margin: 0; max-width: 90ch; }
-  code { font-family: var(--mono); font-size: 12px; color: var(--subtext0); }
+  /* ---- group boxes --------------------------------------------------- */
+  fieldset {
+    border: 1px solid var(--bevel-lo);
+    border-radius: 3px;
+    margin: 0 0 8px;
+    padding: 9px 10px 10px;
+    background: linear-gradient(180deg, #faf4df, #efe7cb);
+  }
+  legend { padding: 0 5px; font-weight: bold; color: #5a4718; font-size: 11px; }
 
-  tr.fresh td { animation: in 1.4s ease-out; }
-  @keyframes in { from { background: color-mix(in srgb, var(--blue) 20%, transparent); } to { background: transparent; } }
+  /* ---- readouts: the numbers row ------------------------------------- */
+  .figs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .fig {
+    flex: 1 1 128px;
+    background: var(--screen);
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    padding: 6px 9px 7px;
+  }
+  .fig .v {
+    display: block;
+    font: 17px/1.1 var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--glow);
+    text-shadow: 0 0 9px rgba(255, 193, 77, 0.3);
+  }
+  .fig .v.go { color: var(--go); text-shadow: 0 0 9px rgba(143, 214, 122, 0.28); }
+  .fig .v.stop { color: var(--stop); text-shadow: 0 0 9px rgba(232, 112, 90, 0.3); }
+  .fig .k { display: block; margin-top: 3px; font-size: 10px; color: var(--glow-dim); }
+
+  /* ---- list view: a sunken screen ------------------------------------ */
+  .list {
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    background: var(--screen);
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    position: sticky;
+    top: 0;
+    text-align: left;
+    font: bold 10px/1 var(--ui);
+    color: var(--ink);
+    padding: 5px 12px 5px 7px;
+    white-space: nowrap;
+    background: linear-gradient(180deg, #ece0bd 0%, #d6c99f 100%);
+    border-right: 1px solid var(--bevel-lo);
+    border-bottom: 1px solid var(--bevel-dk);
+  }
+  thead th:last-child { border-right: 0; }
+  thead th.n { text-align: right; }
+  tbody td {
+    padding: 4px 12px 4px 7px;
+    font-size: 11px;
+    color: var(--read);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--screen-rule);
+  }
+  tbody tr:nth-child(even) td { background: #1a1812; }
+  tbody tr:hover td { background: #2d2614; color: #fff4d6; }
+  td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--glow); }
+  td.sym { font-weight: bold; color: #fff1cf; }
+  td.sym small { font-weight: normal; color: #9b8f6f; margin-left: 6px; }
+  td.soft { color: #a79a77; }
+  td.addr { font-family: var(--mono); color: #8d8471; }
+  .is-go { color: var(--go) !important; }
+  .is-wait { color: var(--wait) !important; }
+  .is-warn { color: var(--warn) !important; }
+
+  /* ---- status bar ---------------------------------------------------- */
+  .status { display: flex; gap: 3px; margin-top: 7px; }
+  .status span {
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    background: var(--face-lo);
+    padding: 2px 8px;
+    font-size: 10px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .status span.grow { flex: 1; }
+  .led { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #7a7257; margin-right: 5px; vertical-align: -1px; }
+  .led.go { background: var(--go); box-shadow: 0 0 5px var(--go); }
+  .led.wait { background: var(--warn); box-shadow: 0 0 5px var(--warn); }
+  .led.stop { background: var(--stop); box-shadow: 0 0 5px var(--stop); }
+
+  .msg { font-size: 10px; color: #6a5c30; margin: 7px 2px 0; }
+  .msg.warn { color: #8a5a07; }
+  .msg.bad { color: #9b2f1c; }
+
+  /* ---- footer -------------------------------------------------------- */
+  .foot { max-width: 1180px; margin: 10px auto 0; padding: 0 4px; }
+  .foot p { margin: 0; font-size: 10px; color: #8d866b; }
+  .foot a { color: #c2a95f; text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+  .foot .sep { color: #5f5a46; margin: 0 6px; }
+
+  tr.fresh td { animation: in 1.3s ease-out; }
+  @keyframes in { from { background: #4a3a12; color: #fff6dc; } to { background: transparent; } }
   @media (prefers-reduced-motion: reduce) { tr.fresh td { animation: none; } }
-
   @media (max-width: 680px) {
-    .wrap { padding: 0 16px; }
-    .figures { gap: 24px 28px; padding: 18px 0 20px; }
-    .fig .v { font-size: 20px; }
+    body { padding: 10px 8px 8px; }
+    .fig { flex: 1 1 44%; }
+    .title h1 { font-size: 11px; }
   }
 </style>
 </head>
 <body>
-<header>
-  <div class="wrap bar">
-    <span class="brand">Lucreocracy<em>coins</em></span>
+<div class="win">
+  <div class="title">
+    <svg class="emblem" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="7" fill="#20190a" stroke="#d8b866" stroke-width="1"/>
+      <circle cx="8" cy="8" r="2.6" fill="none" stroke="#d8b866" stroke-width="1.6"/>
+      <path d="M8 1.2v2.4M8 12.4v2.4M1.2 8h2.4M12.4 8h2.4" stroke="#d8b866" stroke-width="1.4"/>
+    </svg>
+    <h1>Lucreocracy</h1>
     <span class="fill"></span>
-    <span class="feed" id="feed"><i></i><span id="feed-text">connecting</span></span>
-  </div>
-</header>
-
-<div class="wrap">
-  <div class="figures">
-    <div class="fig"><span class="v" id="f-coins">—</span><span class="k">Coins indexed</span></div>
-    <div class="fig"><span class="v" id="f-trading">—</span><span class="k">Trading</span></div>
-    <div class="fig"><span class="v" id="f-pads">—</span><span class="k">Launchpads</span></div>
-    <div class="fig"><span class="v" id="f-chains">—</span><span class="k">Chains</span></div>
+    <span class="meta" id="title-meta"></span>
   </div>
 
-  <div class="block">
-    <div class="head">
-      <h2>How crowded each chain is</h2>
-      <span class="fill"></span>
-      <div class="filters">
-        <select id="window" aria-label="Window">
-          <option value="1">Last day</option>
-          <option value="7" selected>Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
+  <div class="body">
+    <div class="tools">
+      <label class="f">Chain
+        <select id="chain" aria-label="Chain"><option value="">All</option></select>
+      </label>
+      <label class="f">Launchpad
+        <select id="source" aria-label="Launchpad"><option value="">All</option></select>
+      </label>
+      <label class="f">Rows
+        <select id="limit" aria-label="Rows">
+          <option value="50">50</option><option value="100" selected>100</option>
+          <option value="250">250</option><option value="500">500</option>
         </select>
-        <button id="reload">Refresh</button>
-      </div>
-    </div>
-    <div class="scroll"><table>
-      <thead><tr>
-        <th>Chain</th><th class="n">Launched</th><th class="n">Trading</th>
-        <th class="n">Reached market</th><th class="n">Median time</th><th class="n">Turnovers a year</th><th class="n">Under 10 min</th>
-      </tr></thead>
-      <tbody id="sat"></tbody>
-    </table></div>
-    <p class="msg" id="sat-note"></p>
-  </div>
-
-  <div class="block">
-    <div class="head">
-      <h2>Coins</h2>
+      </label>
+      <label class="f">Find
+        <input id="q" placeholder="name or address" autocomplete="off" spellcheck="false" aria-label="Find">
+      </label>
       <span class="fill"></span>
-      <div class="filters">
-        <select id="chain" aria-label="Chain"><option value="">All chains</option></select>
-        <select id="source" aria-label="Launchpad"><option value="">All launchpads</option></select>
-        <select id="limit" aria-label="How many">
-          <option value="50">50</option>
-          <option value="100" selected>100</option>
-          <option value="250">250</option>
-          <option value="500">500</option>
-        </select>
-        <input id="q" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search">
-      </div>
+      <button id="reload">Refresh</button>
     </div>
-    <p class="lede">
-      A launchpad earns from the coins it launched. This earns from all of them.
-    </p>
-    <div class="scroll"><table>
-      <thead><tr>
-        <th>Coin</th><th>Launchpad</th><th>Chain</th><th>Status</th>
-        <th class="n">Launched</th><th class="n">Time to market</th><th>Address</th>
-      </tr></thead>
-      <tbody id="coins"></tbody>
-    </table></div>
-    <p class="msg" id="coins-note"></p>
+
+    <fieldset>
+      <legend>Totals</legend>
+      <div class="figs">
+        <div class="fig"><span class="v" id="f-coins">—</span><span class="k">Coins indexed</span></div>
+        <div class="fig"><span class="v go" id="f-trading">—</span><span class="k">Trading</span></div>
+        <div class="fig"><span class="v" id="f-pads">—</span><span class="k">Launchpads</span></div>
+        <div class="fig"><span class="v" id="f-chains">—</span><span class="k">Chains</span></div>
+      </div>
+    </fieldset>
+
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-coins" aria-controls="pane-coins" aria-selected="true">Coins</button>
+      <button class="tab" role="tab" id="tab-density" aria-controls="pane-density" aria-selected="false">Chain activity</button>
+    </div>
+
+    <div class="pane" id="pane-coins" role="tabpanel" aria-labelledby="tab-coins">
+      <div class="list"><table>
+        <thead><tr>
+          <th>Coin</th><th>Launchpad</th><th>Chain</th><th>Status</th>
+          <th class="n">Launched</th><th class="n">To market</th><th>Address</th>
+        </tr></thead>
+        <tbody id="coins"></tbody>
+      </table></div>
+      <p class="msg" id="coins-note"></p>
+    </div>
+
+    <div class="pane" id="pane-density" role="tabpanel" aria-labelledby="tab-density" hidden>
+      <div class="tools" style="padding-top:0">
+        <label class="f">Period
+          <select id="window" aria-label="Period">
+            <option value="1">Last day</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last year</option>
+          </select>
+        </label>
+      </div>
+      <div class="list"><table>
+        <thead><tr>
+          <th>Chain</th><th class="n">Launched</th><th class="n">Trading</th><th class="n">Reached market</th>
+          <th class="n">Median time</th><th class="n">Turnovers / yr</th><th class="n">Under 10 min</th>
+        </tr></thead>
+        <tbody id="sat"></tbody>
+      </table></div>
+      <p class="msg" id="sat-note"></p>
+    </div>
+
+    <div class="status">
+      <span id="st-feed"><i class="led" id="led"></i><span id="feed-text">Connecting</span></span>
+      <span class="grow" id="st-count"></span>
+      <span id="st-time"></span>
+    </div>
   </div>
 </div>
 
-<footer>
-  <div class="wrap">
-    <p id="route-note">
-      Trading from here is not wired up yet: there is no <code>AggregatorRouter</code> deployed to
-      send a trade to. The contract takes its fee from the input before the swap and pays a member
-      launchpad a share of it, so it earns on volume from any pool — but it has to exist on a chain
-      first. Deploy it with <code>npm run deploy:aggregator -w contracts</code>.
-    </p>
-  </div>
-</footer>
+<div class="foot">
+  <p>
+    &copy; <span id="year">2026</span> Lucreocracy
+    <span class="sep">|</span><a href="/legal/terms-of-service.html">Terms of Service</a>
+    <span class="sep">|</span><a href="/legal/terms-of-use.html">Terms of Use</a>
+    <span class="sep">|</span><a href="/legal/terms-of-purchase.html">Terms of Purchase</a>
+    <span class="sep">|</span><a href="/legal/privacy-policy.html">Privacy Policy</a>
+  </p>
+</div>
 
 <script>
 "use strict";
@@ -270,7 +369,6 @@ let coins = [];
 const int = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US"));
 const pct = (r) => (r === null || r === undefined ? "—" : Math.round(r * 100) + "%");
 
-/** A duration in seconds, as the largest unit that still reads. */
 function dur(secs) {
   if (secs === null || secs === undefined) return "—";
   const s = Number(secs);
@@ -279,12 +377,10 @@ function dur(secs) {
   if (s < 172800) return Math.round(s / 3600) + "h";
   return Math.round(s / 86400) + "d";
 }
-
 function ago(ts) {
   if (!ts) return "—";
   return dur(Math.max(0, Math.floor(Date.now() / 1000) - Number(ts)));
 }
-
 const short = (a) => (a && a.length > 12 ? a.slice(0, 6) + "…" + a.slice(-4) : a || "");
 const chainLabel = (id) => (chains.find((c) => c.chainId === id) || {}).label || String(id);
 const sourceLabel = (id) => (sources.find((s) => s.id === id) || {}).label || id;
@@ -294,73 +390,67 @@ async function get(path) {
   if (!r.ok) throw new Error("HTTP " + r.status);
   return r.json();
 }
-
 function msg(el, text, kind) {
   el.textContent = text || "";
   el.className = "msg" + (kind ? " " + kind : "");
 }
-
-function feed(state, text) {
-  $("feed").className = "feed " + state;
-  $("feed-text").textContent = text;
-}
-
 function cell(text, cls) {
   const td = document.createElement("td");
   if (cls) td.className = cls;
   td.textContent = text;
   return td;
 }
+function clock() {
+  $("st-time").textContent = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
 
-// --- how crowded ----------------------------------------------------------
+// ---- tabs ---------------------------------------------------------------
+for (const [tab, pane] of [["tab-coins", "pane-coins"], ["tab-density", "pane-density"]]) {
+  $(tab).onclick = () => {
+    for (const [t, p] of [["tab-coins", "pane-coins"], ["tab-density", "pane-density"]]) {
+      const on = t === tab;
+      $(t).setAttribute("aria-selected", String(on));
+      $(p).hidden = !on;
+    }
+    if (pane === "pane-density") loadSaturation();
+  };
+}
 
+// ---- chain activity -----------------------------------------------------
 async function loadSaturation() {
   const body = $("sat");
   try {
     const s = await get("/api/saturation?windowDays=" + encodeURIComponent($("window").value));
     body.textContent = "";
     if (!s.chains.length) {
-      msg($("sat-note"), "Nothing launched in this window. Try a longer one.");
+      msg($("sat-note"), "Nothing launched in this period.");
       return;
     }
     for (const c of s.chains) {
       const tr = document.createElement("tr");
       tr.append(
-        cell(chainLabel(c.chainId)),
+        cell(chainLabel(c.chainId), "soft"),
         cell(int(c.launches), "n"),
         cell(int(c.graduations), "n"),
         cell(pct(c.graduationRate), "n"),
         cell(dur(c.medianTurnoverSecs), "n"),
         cell(int(c.turnoversPerYear), "n"),
-        cell(int(c.fastGraduations), c.fastGraduations > 0 ? "n flag" : "n"),
+        cell(int(c.fastGraduations), c.fastGraduations > 0 ? "n is-warn" : "n"),
       );
       body.append(tr);
     }
-    // Worth saying rather than leaving in a column: a coin that reaches an open
-    // market in minutes was usually bought out by whoever launched it, so the
-    // turnover figure beside it is measuring that and not demand.
-    const fast = s.chains.filter((c) => c.fastGraduations > 0);
-    msg(
-      $("sat-note"),
-      fast.length
-        ? fast.map((c) => chainLabel(c.chainId) + ": " + c.fastGraduations).join(", ") +
-            " reached a market in under ten minutes, which usually means the launcher bought it out. " +
-            "Read the turnover on those chains as that, not as demand."
-        : "",
-      fast.length ? "warn" : "",
-    );
+    const fast = s.chains.filter((c) => c.fastGraduations > 0).reduce((a, c) => a + c.fastGraduations, 0);
+    msg($("sat-note"), fast ? fast + " reached a market in under ten minutes." : "", fast ? "warn" : "");
   } catch (e) {
     body.textContent = "";
-    msg($("sat-note"), "Could not load this: " + e.message, "bad");
+    msg($("sat-note"), e.message, "bad");
   }
 }
 
-// --- coins ----------------------------------------------------------------
-
+// ---- coins --------------------------------------------------------------
 function coinRow(c) {
   const tr = document.createElement("tr");
   tr.dataset.address = (c.address || "").toLowerCase();
-
   const sym = document.createElement("td");
   sym.className = "sym";
   sym.textContent = c.symbol || "—";
@@ -369,18 +459,14 @@ function coinRow(c) {
     n.textContent = c.name;
     sym.append(n);
   }
-
   const addr = cell(short(c.address), "addr");
   addr.title = c.address || "";
-
   tr.append(
     sym,
-    cell(sourceLabel(c.source), "pad"),
-    cell(chainLabel(c.chainId), "pad"),
-    cell(c.graduated ? "Trading" : "Filling", c.graduated ? "trading" : "filling"),
+    cell(sourceLabel(c.source), "soft"),
+    cell(chainLabel(c.chainId), "soft"),
+    cell(c.graduated ? "Trading" : "Filling", c.graduated ? "is-go" : "is-wait"),
     cell(ago(c.launchedAt), "n"),
-    // Launch to open market: the turnover selection divides by. A dash while
-    // a coin is still filling — never a guess.
     cell(c.graduated && c.graduatedAt && c.launchedAt ? dur(c.graduatedAt - c.launchedAt) : "—", "n"),
     addr,
   );
@@ -390,6 +476,7 @@ function coinRow(c) {
 function figures() {
   $("f-coins").textContent = int(coins.length);
   $("f-trading").textContent = int(coins.filter((c) => c.graduated).length);
+  $("st-count").textContent = coins.length + " coins";
 }
 
 function renderCoins() {
@@ -405,14 +492,7 @@ function renderCoins() {
   body.textContent = "";
   for (const c of rows) body.append(coinRow(c));
   figures();
-  msg(
-    $("coins-note"),
-    q && rows.length !== coins.length
-      ? rows.length + " of " + coins.length + " match"
-      : coins.length
-        ? ""
-        : "Nothing indexed yet.",
-  );
+  msg($("coins-note"), q && rows.length !== coins.length ? rows.length + " of " + coins.length + " shown" : "");
 }
 
 async function loadCoins() {
@@ -422,27 +502,32 @@ async function loadCoins() {
     if ($("source").value) params.set("source", $("source").value);
     coins = (await get("/api/coins?" + params.toString())).coins;
     renderCoins();
+    clock();
   } catch (e) {
-    msg($("coins-note"), "Could not load coins: " + e.message, "bad");
+    msg($("coins-note"), e.message, "bad");
   }
 }
 
-// --- live -----------------------------------------------------------------
+// ---- live ---------------------------------------------------------------
+function feed(state, text) {
+  $("led").className = "led " + state;
+  $("feed-text").textContent = text;
+}
 
 function connect() {
   let ws;
   try {
     ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
   } catch (e) {
-    feed("down", "no live updates");
+    feed("stop", "Offline");
     return;
   }
-  feed("wait", "connecting");
+  feed("wait", "Connecting");
   ws.onopen = () => {
     for (const channel of ["coin:launched", "coin:graduated"]) {
       ws.send(JSON.stringify({ op: "subscribe", channel: channel, token: "*" }));
     }
-    feed("up", "live");
+    feed("go", "Live");
   };
   ws.onmessage = (ev) => {
     let m;
@@ -451,8 +536,7 @@ function connect() {
     else if (m.channel === "coin:graduated") onGraduated(m.data);
   };
   ws.onclose = () => {
-    feed("wait", "reconnecting");
-    // Live updates are a convenience; the tables refresh on their own anyway.
+    feed("wait", "Reconnecting");
     setTimeout(connect, 4000);
   };
   ws.onerror = () => ws.close();
@@ -462,8 +546,6 @@ function onLaunched(c) {
   if (!c || !c.address) return;
   const addr = String(c.address).toLowerCase();
   if (coins.some((x) => (x.address || "").toLowerCase() === addr)) return;
-  // Respect the filters: something new on a chain the viewer filtered out
-  // should not appear just because it is new.
   if ($("chain").value && String(c.chainId) !== $("chain").value) return;
   if ($("source").value && c.source !== $("source").value) return;
   coins.unshift(c);
@@ -471,6 +553,7 @@ function onLaunched(c) {
   row.className = "fresh";
   $("coins").prepend(row);
   figures();
+  clock();
 }
 
 function onGraduated(c) {
@@ -488,18 +571,23 @@ function onGraduated(c) {
     row.replaceWith(next);
   }
   figures();
-  loadSaturation();
+  clock();
+  if (!$("pane-density").hidden) loadSaturation();
 }
 
-// --- start ----------------------------------------------------------------
-
+// ---- start --------------------------------------------------------------
 async function start() {
+  $("year").textContent = String(new Date().getFullYear());
+  clock();
   try {
     const s = await get("/api/sources");
     chains = s.chains;
     sources = s.sources;
     $("f-chains").textContent = int(chains.length);
     $("f-pads").textContent = int(sources.length);
+    $("title-meta").textContent =
+      sources.length + (sources.length === 1 ? " launchpad" : " launchpads") +
+      " on " + chains.length + (chains.length === 1 ? " chain" : " chains");
     for (const c of chains) {
       const o = document.createElement("option");
       o.value = String(c.chainId);
@@ -509,27 +597,26 @@ async function start() {
     for (const src of sources) {
       const o = document.createElement("option");
       o.value = src.id;
-      // Naming the chain on every launchpad is only useful when there is more
-      // than one; otherwise it is the same word on every line.
       o.textContent = chains.length > 1 ? src.label + " · " + chainLabel(src.chainId) : src.label;
       o.title = src.label + " · " + chainLabel(src.chainId);
       $("source").append(o);
     }
   } catch (e) {
-    msg($("coins-note"), "The aggregator is not answering: " + e.message, "bad");
-    feed("down", "offline");
+    msg($("coins-note"), e.message, "bad");
+    feed("stop", "Offline");
     return;
   }
-  await Promise.all([loadCoins(), loadSaturation()]);
+  await loadCoins();
   connect();
   setInterval(() => {
     if (document.hidden) return;
     loadCoins();
-    loadSaturation();
+    if (!$("pane-density").hidden) loadSaturation();
   }, 60000);
+  setInterval(clock, 30000);
 }
 
-$("reload").onclick = () => { loadCoins(); loadSaturation(); };
+$("reload").onclick = () => { loadCoins(); if (!$("pane-density").hidden) loadSaturation(); };
 $("window").onchange = loadSaturation;
 $("chain").onchange = loadCoins;
 $("source").onchange = loadCoins;

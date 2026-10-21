@@ -3,277 +3,302 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22%2320190a%22%2F%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.2%22%20fill%3D%22none%22%20stroke%3D%22%23d8b866%22%20stroke-width%3D%221.2%22%2F%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%222.4%22%20fill%3D%22none%22%20stroke%3D%22%23d8b866%22%20stroke-width%3D%221.6%22%2F%3E%3Cpath%20d%3D%22M8%201.4v2.2M8%2012.4v2.2M1.4%208h2.2M12.4%208h2.2%22%20stroke%3D%22%23d8b866%22%20stroke-width%3D%221.3%22%2F%3E%3C%2Fsvg%3E">
 <meta name="robots" content="noindex, nofollow">
-<title>Lucreocracy — launch console</title>
-<!--
-  The operator's console, served by the service it drives.
-
-  One file, no build step, no framework, no web fonts and no CDN. This page is
-  a form and a status table; a bundler and a wallet-connector library would
-  cost more than they are worth, and every dependency here is one more thing
-  between an operator and a signature they are about to give.
-
-  It holds no secret. A grant token never reaches a browser: the page proves a
-  wallet and receives a short session bound to one launchpad. The spending
-  limit it shows is the service's own, and is what bounds the damage if this
-  session is ever stolen.
-
-  Same tokens as aggregator/public/terminal.html. The two are served by
-  different processes, so the block below is duplicated there; edit both.
-
-  Colour carries one real fact: when the service can actually sign, the launch
-  button and the signing line are red. Live is also its own button rather than
-  a checkbox, because a toggle left on from an hour ago is how someone spends
-  ETH they did not mean to.
--->
+<title>Lucreocracy</title>
 <style>
   :root {
-    --base: #1e1e2e;
-    --mantle: #181825;
-    --surface0: #313244;
-    --surface1: #45475a;
-    --surface2: #585b70;
-    --overlay0: #6c7086;
-    --overlay1: #7f849c;
-    --subtext0: #a6adc8;
-    --subtext1: #bac2de;
-    --text: #cdd6f4;
-    --blue: #89b4fa;
-    --green: #a6e3a1;
-    --yellow: #f9e2af;
-    --red: #f38ba8;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --frame: #6b5222;
+    --title-a: #b08c3c;
+    --title-b: #85682a;
+    --title-c: #5d4818;
+    --face: #ded3b0;
+    --face-lo: #c9bd96;
+    --face-hi: #f3ecd2;
+    --ink: #2a2318;
+    --ink-soft: #5d5134;
+    --bevel-hi: #fffbe9;
+    --bevel-lo: #8a7c53;
+    --bevel-dk: #5f5533;
+    --screen: #15140f;
+    --screen-rule: #35301f;
+    --glow: #ffc14d;
+    --glow-dim: #a8821f;
+    --read: #e7dcbd;
+    --go: #8fd67a;
+    --warn: #ffd166;
+    --stop: #e8705a;
+    --ui: Tahoma, Verdana, "Segoe UI", Geneva, sans-serif;
+    --mono: "Lucida Console", ui-monospace, Consolas, Menlo, monospace;
   }
   * { box-sizing: border-box; }
-  html { background: var(--base); }
+  html { background: #15150f; }
   body {
     margin: 0;
-    background: var(--base);
-    color: var(--text);
-    font: 14px/1.5 var(--sans);
-    -webkit-font-smoothing: antialiased;
+    padding: 18px 16px 10px;
+    font: 11px/1.45 var(--ui);
+    color: var(--ink);
+    background: radial-gradient(1200px 520px at 50% -140px, #3a3828 0%, #1d1c14 60%, #121109 100%);
+    min-height: 100vh;
   }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
 
-  header { border-bottom: 1px solid var(--surface0); background: var(--mantle); }
-  .bar { display: flex; align-items: center; gap: 14px; height: 52px; flex-wrap: wrap; }
-  .brand { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-  .brand em { font-style: normal; color: var(--overlay1); font-weight: 400; margin-left: 8px; }
-  .bar .fill { flex: 1; }
-  .who { font-size: 12px; color: var(--overlay1); font-family: var(--mono); }
+  .win {
+    max-width: 880px;
+    margin: 0 auto;
+    background: var(--frame);
+    border-radius: 8px 8px 3px 3px;
+    padding: 3px;
+    box-shadow: 0 1px 0 #8f7334 inset, 0 10px 34px rgba(0, 0, 0, 0.55);
+  }
+  .title {
+    height: 27px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px 0 5px;
+    border-radius: 6px 6px 0 0;
+    background: linear-gradient(180deg, var(--title-a) 0%, var(--title-b) 48%, var(--title-c) 52%, #4b3912 100%);
+    box-shadow: 0 1px 0 rgba(255, 240, 200, 0.45) inset;
+  }
+  .title h1 {
+    margin: 0;
+    font: bold 12px/1 var(--ui);
+    color: #fff8e4;
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.6);
+  }
+  .title .fill { flex: 1; }
+  .title .meta { font-size: 10px; color: #f0e2bd; text-shadow: 1px 1px 1px rgba(0,0,0,.5); font-family: var(--mono); }
+  .emblem { width: 16px; height: 16px; flex: none; }
+  .body { background: var(--face); border-radius: 0 0 2px 2px; padding: 8px 9px 9px; }
 
-  .figures { display: flex; flex-wrap: wrap; gap: 34px; padding: 22px 0 24px; }
+  fieldset {
+    border: 1px solid var(--bevel-lo);
+    border-radius: 3px;
+    margin: 0 0 8px;
+    padding: 9px 11px 11px;
+    background: linear-gradient(180deg, #faf4df, #efe7cb);
+  }
+  legend { padding: 0 5px; font-weight: bold; color: #5a4718; font-size: 11px; }
+
+  .figs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .fig {
+    flex: 1 1 130px;
+    background: var(--screen);
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    padding: 6px 9px 7px;
+  }
   .fig .v {
     display: block;
-    font: 600 22px/1.1 var(--mono);
+    font: 17px/1.1 var(--mono);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
+    color: var(--glow);
+    text-shadow: 0 0 9px rgba(255, 193, 77, 0.3);
   }
-  .fig .v.hot { color: var(--red); }
-  .fig .v.cool { color: var(--green); }
-  .fig .k { display: block; margin-top: 5px; font-size: 11px; color: var(--overlay1); }
+  .fig .v.hot { color: var(--stop); text-shadow: 0 0 9px rgba(232, 112, 90, 0.32); }
+  .fig .v.cool { color: var(--go); text-shadow: 0 0 9px rgba(143, 214, 122, 0.28); }
+  .fig .k { display: block; margin-top: 3px; font-size: 10px; color: var(--glow-dim); }
 
-  .block { padding-bottom: 32px; }
-  .head {
-    display: flex;
-    align-items: baseline;
-    gap: 16px;
-    flex-wrap: wrap;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--surface0);
-    margin-bottom: 14px;
+  button {
+    font: 11px var(--ui);
+    color: var(--ink);
+    padding: 3px 12px;
+    border: 1px solid;
+    border-color: var(--bevel-hi) var(--bevel-dk) var(--bevel-dk) var(--bevel-hi);
+    border-radius: 3px;
+    background: linear-gradient(180deg, #f6efd6 0%, #e2d7b3 50%, #d3c79f 100%);
+    cursor: pointer;
   }
-  h2 { font-size: 13px; font-weight: 600; margin: 0; color: var(--subtext1); }
-  .head .fill { flex: 1; }
-
-  dl {
-    display: grid;
-    grid-template-columns: minmax(12ch, 20ch) 1fr;
-    gap: 7px 20px;
-    margin: 0;
-    font-size: 13px;
+  button:hover:not(:disabled) { background: linear-gradient(180deg, #fff9e4 0%, #eee2bd 50%, #ddd0a6 100%); }
+  button:active:not(:disabled) {
+    border-color: var(--bevel-dk) var(--bevel-hi) var(--bevel-hi) var(--bevel-dk);
+    background: #cfc298;
   }
-  dt { color: var(--overlay1); font-size: 12px; }
-  dd { margin: 0; overflow-wrap: anywhere; }
-  dd.mono, .mono { font-family: var(--mono); font-size: 12px; }
+  button:disabled { color: #9a9070; text-shadow: 1px 1px 0 var(--face-hi); cursor: default; }
+  button:focus-visible { outline: 1px dotted var(--ink); outline-offset: -4px; }
+  button.go { font-weight: bold; }
+  /* The one button that spends money. */
+  button.fire { font-weight: bold; color: #7c1f0c; }
+  button.fire:not(:disabled) {
+    border-color: #ffd9cf #8f3418 #8f3418 #ffd9cf;
+    background: linear-gradient(180deg, #f3c0ae 0%, #e39177 50%, #d47c60 100%);
+  }
+  button.fire:hover:not(:disabled) { background: linear-gradient(180deg, #ffd0c0 0%, #eda088 50%, #dd8a6e 100%); }
+  .row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 11px; }
 
-  label { display: block; margin-bottom: 13px; }
-  label > span { display: block; color: var(--overlay1); font-size: 12px; margin-bottom: 5px; }
+  label { display: block; margin-bottom: 9px; }
+  label > span { display: block; color: var(--ink-soft); margin-bottom: 3px; }
   input, select, textarea {
     width: 100%;
     max-width: 100%;
-    background: var(--surface0);
-    color: var(--text);
-    border: 1px solid transparent;
-    border-radius: 5px;
-    padding: 6px 9px;
-    font: inherit;
-    font-size: 13px;
+    font: 11px var(--ui);
+    color: var(--ink);
+    background: #fffdf2;
+    padding: 3px 5px;
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    border-radius: 0;
   }
-  textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
-  input::placeholder, textarea::placeholder { color: var(--overlay0); }
-  input:hover, select:hover, textarea:hover { border-color: var(--surface2); }
-  input:focus, select:focus, textarea:focus, button:focus-visible {
-    outline: none;
-    border-color: var(--blue);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 26%, transparent);
-  }
+  textarea { resize: vertical; min-height: 54px; line-height: 1.5; font-family: var(--ui); }
+  input:focus, select:focus, textarea:focus { outline: 1px solid #8a6b2f; }
 
-  button {
-    background: transparent;
-    color: var(--subtext0);
-    border: 1px solid var(--surface1);
-    border-radius: 5px;
-    padding: 6px 13px;
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  button:hover:not(:disabled) { color: var(--text); border-color: var(--surface2); background: var(--surface0); }
-  button.go { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, transparent); }
-  button.go:hover:not(:disabled) { background: color-mix(in srgb, var(--blue) 14%, transparent); border-color: var(--blue); color: var(--blue); }
-  /* The one button that spends money. */
-  button.fire { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); font-weight: 600; }
-  button.fire:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 15%, transparent); border-color: var(--red); color: var(--red); }
-  button:disabled { opacity: 0.38; cursor: not-allowed; }
-  .row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 14px; }
+  dl { display: grid; grid-template-columns: minmax(11ch, 19ch) 1fr; gap: 3px 14px; margin: 0; }
+  dt { color: var(--ink-soft); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .mono, dd.mono { font-family: var(--mono); }
 
   pre {
-    background: var(--mantle);
-    border: 1px solid var(--surface0);
-    border-radius: 6px;
-    padding: 11px 12px;
-    font: 12px/1.6 var(--mono);
-    color: var(--subtext0);
-    max-height: 260px;
+    background: var(--screen);
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    padding: 8px 10px;
+    font: 11px/1.6 var(--mono);
+    color: var(--read);
+    max-height: 240px;
     overflow: auto;
-    margin: 14px 0 0;
+    margin: 10px 0 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  th, td { text-align: left; padding: 7px 16px 7px 0; white-space: nowrap; }
-  th { font-size: 11px; font-weight: 500; color: var(--overlay1); padding-bottom: 7px; }
-  td { border-top: 1px solid var(--surface0); font-size: 13px; }
-  .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  th.n { text-align: right; }
+  .list {
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    background: var(--screen);
+    overflow-x: auto;
+    margin-top: 9px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left;
+    font: bold 10px/1 var(--ui);
+    color: var(--ink);
+    padding: 5px 12px 5px 7px;
+    white-space: nowrap;
+    background: linear-gradient(180deg, #ece0bd 0%, #d6c99f 100%);
+    border-right: 1px solid var(--bevel-lo);
+    border-bottom: 1px solid var(--bevel-dk);
+  }
+  thead th:last-child { border-right: 0; }
+  thead th.n { text-align: right; }
+  tbody td {
+    padding: 4px 12px 4px 7px;
+    color: var(--read);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--screen-rule);
+  }
+  tbody tr:nth-child(even) td { background: #1a1812; }
+  td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--glow); }
 
-  .msg { font-size: 12px; color: var(--overlay1); margin: 12px 0 0; }
-  .msg.bad { color: var(--red); }
-  .msg.good { color: var(--green); }
-  .lede { font-size: 13px; color: var(--subtext0); margin: 0 0 16px; max-width: 74ch; }
+  .status { display: flex; gap: 3px; margin-top: 8px; }
+  .status span {
+    border: 1px solid;
+    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    background: var(--face-lo);
+    padding: 2px 8px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .status span.grow { flex: 1; }
+
+  .msg { font-size: 10px; color: #6a5c30; margin: 8px 2px 0; }
+  .msg.bad { color: #9b2f1c; }
+  .msg.good { color: #2f6b1c; }
+  .hint { font-size: 10px; color: #6a5c30; margin: 0 0 9px; }
   .hidden { display: none; }
 
+
   @media (max-width: 680px) {
-    .wrap { padding: 0 16px; }
-    .figures { gap: 22px 26px; padding: 18px 0 20px; }
-    .fig .v { font-size: 19px; }
-    dl { grid-template-columns: 1fr; gap: 2px 0; }
-    dt { margin-top: 9px; }
+    body { padding: 10px 8px 8px; }
+    .fig { flex: 1 1 44%; }
+    dl { grid-template-columns: 1fr; gap: 1px 0; }
+    dt { margin-top: 7px; }
   }
 </style>
 </head>
 <body>
-<header>
-  <div class="wrap bar">
-    <span class="brand">Lucreocracy<em>launch console</em></span>
+<div class="win">
+  <div class="title">
+    <svg class="emblem" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#20190a" stroke="#d8b866" stroke-width="1"/><circle cx="8" cy="8" r="2.6" fill="none" stroke="#d8b866" stroke-width="1.6"/><path d="M8 1.2v2.4M8 12.4v2.4M1.2 8h2.4M12.4 8h2.4" stroke="#d8b866" stroke-width="1.4"/></svg>
+    <h1>Launch console</h1>
     <span class="fill"></span>
-    <span class="who" id="who"></span>
-  </div>
-</header>
-
-<div class="wrap">
-  <div id="signin">
-    <div class="block">
-      <div class="head"><h2>Sign in</h2></div>
-      <p class="lede">
-        Your wallet proves who you are. The message you sign says what it allows: designing and
-        launching coins on this launchpad, which spends the operator's ETH on opening buys.
-      </p>
-      <label><span>Launchpad</span>
-        <input id="tenant" placeholder="e.g. acme" autocomplete="off" spellcheck="false">
-      </label>
-      <dl>
-        <dt>Wallet</dt>
-        <dd class="mono" id="wallet">not connected</dd>
-      </dl>
-      <div class="row">
-        <button id="connect">Connect wallet</button>
-        <button id="auth" class="go" disabled>Sign in</button>
-      </div>
-      <p id="signin-note" class="msg hidden"></p>
-    </div>
+    <span class="meta" id="who"></span>
   </div>
 
-  <div id="app" class="hidden">
-    <div class="figures">
-      <div class="fig"><span class="v" id="f-launches">—</span><span class="k">Launches left</span></div>
-      <div class="fig"><span class="v" id="f-budget">—</span><span class="k">Opening buys left</span></div>
-      <div class="fig"><span class="v" id="f-spent">—</span><span class="k">Spent so far</span></div>
-      <div class="fig"><span class="v" id="f-signing">—</span><span class="k">Signing</span></div>
+  <div class="body">
+    <div id="signin">
+      <fieldset>
+        <legend>Sign in</legend>
+        <label><span>Launchpad</span>
+          <input id="tenant" placeholder="e.g. acme" autocomplete="off" spellcheck="false">
+        </label>
+        <dl>
+          <dt>Wallet</dt>
+          <dd class="mono" id="wallet">not connected</dd>
+        </dl>
+        <div class="row">
+          <button id="connect">Connect wallet</button>
+          <button id="auth" class="go" disabled>Sign in</button>
+        </div>
+        <p id="signin-note" class="msg hidden"></p>
+      </fieldset>
     </div>
 
-    <div class="block">
-      <div class="head">
-        <h2>This launchpad</h2>
-        <span class="fill"></span>
-        <button id="signout">Sign out</button>
-      </div>
-      <dl id="ready"></dl>
-      <p id="allowance-note" class="msg hidden"></p>
-    </div>
+    <div id="app" class="hidden">
+      <fieldset>
+        <legend>Allowance</legend>
+        <div class="figs">
+          <div class="fig"><span class="v" id="f-launches">&mdash;</span><span class="k">Launches left</span></div>
+          <div class="fig"><span class="v" id="f-budget">&mdash;</span><span class="k">Opening buys left (ETH)</span></div>
+          <div class="fig"><span class="v" id="f-spent">&mdash;</span><span class="k">Spent (ETH)</span></div>
+          <div class="fig"><span class="v" id="f-signing">&mdash;</span><span class="k">Signing</span></div>
+        </div>
+      </fieldset>
 
-    <div class="block">
-      <div class="head"><h2>Design a coin</h2></div>
-      <p class="lede">
-        Leave the brief empty to have one written from the profile. A dry run simulates the launch
-        against the real factory, so it fails for the same reasons a live one would.
-      </p>
-      <label><span>Brief</span>
-        <textarea id="topic" maxlength="2000" placeholder="an agent that watches a DEX for stale oracle prices"></textarea>
-      </label>
-      <label><span>Profile</span><select id="profile"></select></label>
-      <label><span>Opening buy (ETH)</span><input id="firstBuy" value="0" inputmode="decimal"></label>
-      <div class="row">
-        <button id="design">Design only</button>
-        <button id="dry" class="go">Dry run</button>
-        <button id="live" class="fire" disabled>Launch for real</button>
-      </div>
-      <p id="run-note" class="msg hidden"></p>
-      <dl id="run" class="hidden" style="margin-top:14px"></dl>
-      <div class="row hidden" id="run-actions"><button id="cancel">Cancel</button></div>
-      <pre id="log" class="hidden"></pre>
-    </div>
+      <fieldset>
+        <legend>Launchpad</legend>
+        <dl id="ready"></dl>
+        <p id="allowance-note" class="msg hidden"></p>
+        <div class="row"><button id="signout">Sign out</button></div>
+      </fieldset>
 
-    <div class="block">
-      <div class="head">
-        <h2>The loop</h2>
-        <span class="fill"></span>
-        <button id="loop-start">Start</button>
-        <button id="loop-stop">Stop</button>
-      </div>
-      <p class="lede">
-        Launches on its own, breeding the formats that earned and reaping the ones that did not. It
-        stops on its income target, its launch cap, or when the market stops absorbing new coins
-        — the last of which is the one worth reading, because it means supply ran ahead of demand
-        rather than running out of work.
-      </p>
-      <dl id="loop"></dl>
-      <p id="loop-note" class="msg hidden"></p>
-    </div>
+      <fieldset>
+        <legend>Design a coin</legend>
+        <label><span>Brief</span>
+          <textarea id="topic" maxlength="2000" placeholder="an agent that watches a DEX for stale oracle prices"></textarea>
+        </label>
+        <label><span>Profile</span><select id="profile"></select></label>
+        <label><span>Opening buy (ETH)</span><input id="firstBuy" value="0" inputmode="decimal"></label>
+        <p class="hint">An empty brief is written from the profile. A dry run simulates against the real factory.</p>
+        <div class="row">
+          <button id="design">Design only</button>
+          <button id="dry" class="go">Dry run</button>
+          <button id="live" class="fire" disabled>Launch for real</button>
+        </div>
+        <p id="run-note" class="msg hidden"></p>
+        <dl id="run" class="hidden" style="margin-top:10px"></dl>
+        <div class="row hidden" id="run-actions"><button id="cancel">Cancel</button></div>
+        <pre id="log" class="hidden"></pre>
+      </fieldset>
 
-    <div class="block">
-      <div class="head">
-        <h2>Fee income</h2>
-        <span class="fill"></span>
-        <button id="income-read">Read from chain</button>
-      </div>
-      <div id="income"></div>
+      <fieldset>
+        <legend>Loop</legend>
+        <dl id="loop"></dl>
+        <p id="loop-note" class="msg hidden"></p>
+        <div class="row">
+          <button id="loop-start">Start</button>
+          <button id="loop-stop">Stop</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Fee income</legend>
+        <div class="row" style="margin-top:0"><button id="income-read">Read from chain</button></div>
+        <div id="income"></div>
+      </fieldset>
     </div>
   </div>
 </div>
+
 
 <script>
 "use strict";

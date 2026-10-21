@@ -1,0 +1,59 @@
+/* Legal documents: the same window chrome, set for reading rather than
+   scanning — longer measure, larger type, no screens. */
+:root {
+  --frame: #6b5222;
+  --title-a: #b08c3c;
+  --title-b: #85682a;
+  --title-c: #5d4818;
+  --face: #ded3b0;
+  --face-hi: #f3ecd2;
+  --ink: #2a2318;
+  --bevel-hi: #fffbe9;
+  --bevel-lo: #8a7c53;
+  --ui: Tahoma, Verdana, "Segoe UI", Geneva, sans-serif;
+}
+* { box-sizing: border-box; }
+html { background: #15150f; }
+body {
+  margin: 0;
+  padding: 18px 16px 24px;
+  font: 12px/1.6 var(--ui);
+  color: var(--ink);
+  background: radial-gradient(1200px 520px at 50% -140px, #3a3828 0%, #1d1c14 60%, #121109 100%);
+  min-height: 100vh;
+}
+.win {
+  max-width: 820px;
+  margin: 0 auto;
+  background: var(--frame);
+  border-radius: 8px 8px 3px 3px;
+  padding: 3px;
+  box-shadow: 0 1px 0 #8f7334 inset, 0 10px 34px rgba(0, 0, 0, 0.55);
+}
+.title {
+  height: 27px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 6px 0 5px;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, var(--title-a) 0%, var(--title-b) 48%, var(--title-c) 52%, #4b3912 100%);
+  box-shadow: 0 1px 0 rgba(255, 240, 200, 0.45) inset;
+}
+.title h1 {
+  margin: 0;
+  font: bold 12px/1 var(--ui);
+  color: #fff8e4;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.6);
+}
+.emblem { width: 16px; height: 16px; flex: none; }
+.body { background: var(--face-hi); border-radius: 0 0 2px 2px; padding: 20px 26px 24px; }
+h2 { font-size: 14px; margin: 22px 0 7px; color: #5a4718; }
+h2:first-of-type { margin-top: 4px; }
+p, li { margin: 0 0 9px; max-width: 74ch; }
+ul { padding-left: 20px; }
+.updated { font-size: 11px; color: #6a5c30; margin-bottom: 18px; }
+.nav { max-width: 820px; margin: 10px auto 0; padding: 0 4px; font-size: 10px; color: #8d866b; }
+.nav a { color: #c2a95f; text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+.nav .sep { color: #5f5a46; margin: 0 6px; }

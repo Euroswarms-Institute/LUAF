@@ -96,24 +96,24 @@ web fonts and no CDN: it reads only the API above and follows the WebSocket, so 
 answer the API can hand out the page, there is no second thing to deploy or keep in step, and it
 renders with the machine unplugged. It is read once at startup, so an edit needs a restart.
 
-Catppuccin Mocha, flat: content sits on the page, separated by hairlines and space rather than
-wrapped in boxes. Sans for labels and prose, monospace only where figures and addresses need to
-line up. Colour carries meaning and nothing else — green is trading, blue is still filling, yellow
-is a figure not to trust, red is broken. `service/public/console.html` uses the same tokens; the two
-are served by different processes, so the style block is duplicated rather than shared, and both
-need editing together.
+Windows XP chrome in Trade Federation brass: a gradient title bar, beveled controls, tab control,
+group boxes, and sunken list views rendered as amber-on-charcoal screens. Tahoma for chrome, a
+console face for figures and addresses, with tabular numerals so columns do not jitter as they
+update. Colour says one thing each — green is trading, blue is still filling, amber is a figure,
+yellow is a figure not to trust, red is broken.
+
+The four legal documents live under `public/legal/` and are reached from the footer, which is the
+only place they appear. Nothing else on the page carries policy, disclaimer or implementation
+notes.
 
 It shows every coin on every indexed launchpad and chain, whether it is trading or still filling,
-and how long it took to reach a market — the turnover selection divides by. The crowding table sits
-above it. One reading is stated rather than left in a column: a coin that reached a market in under
-ten minutes was usually bought out by whoever launched it, so the turnover figure beside it is
-measuring that and not demand.
+and how long it took to reach a market — the turnover selection divides by. The second tab is
+per-chain activity over a chosen period.
 
-**Trading from it is not wired up yet**, and the page says so rather than offering a button that
-does nothing: there is no `AggregatorRouter` deployment to send a trade to. The contract is the half
-that charges — a fee on the input before the swap, with a member launchpad's share paid out of it —
-so until it exists on a chain, the terminal brings traffic and collects nothing. Deploy it
-(`npm run deploy:aggregator -w contracts`) and that panel is where the trade goes.
+Trading from it is not wired up: there is no `AggregatorRouter` deployed to route to, so the
+terminal brings traffic and collects nothing until `npm run deploy:aggregator -w contracts` has been
+run against a chain. The page does not mention this — a product surface is not the place for a
+build note.
 
 ## What saturation can and cannot see
 

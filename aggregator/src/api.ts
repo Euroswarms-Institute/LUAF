@@ -5,7 +5,7 @@
  *  API, so anything that can answer the API can hand out the page, and there
  *  is no second thing to deploy or keep in step. */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import cors from "cors";
@@ -22,27 +22,45 @@ function intParam(value: unknown, fallback: number, min: number, max: number): n
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
-/** The terminal page, read once at startup.
- *
- *  It never changes while the process runs, and a missing file should show up
- *  in the startup log rather than as a 404 the first time somebody looks. */
-function terminalPage(): string | undefined {
-  // This package compiles to CommonJS, so __dirname is the module's directory:
-  // dist/ when built, src/ under tsx. The page sits beside both.
-  for (const candidate of [join(__dirname, "../public/terminal.html"), join(__dirname, "public/terminal.html")]) {
-    try {
-      return readFileSync(candidate, "utf8");
-    } catch {
-      /* try the next layout */
-    }
+/** Where the served files live. This package compiles to CommonJS, so
+ *  __dirname is the module's directory: dist/ when built, src/ under tsx, and
+ *  public/ sits beside both. Resolved once, so a missing directory shows up in
+ *  the startup log rather than as a 404 the first time somebody looks. */
+function publicDir(): string | undefined {
+  for (const candidate of [join(__dirname, "../public"), join(__dirname, "public")]) {
+    if (existsSync(join(candidate, "terminal.html"))) return candidate;
   }
   return undefined;
+}
+
+/** The terminal page, read once at startup. */
+function terminalPage(): string | undefined {
+  const dir = publicDir();
+  if (!dir) return undefined;
+  try {
+    return readFileSync(join(dir, "terminal.html"), "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 export function createApi(cfg: AggregatorConfig, store: Store, indexer: Indexer): Express {
   const app = express();
   app.use(cors());
   app.disable("x-powered-by");
+
+  // The legal documents and the stylesheet they share. Served from disk rather
+  // than held in memory: nobody reads them often enough for that to matter.
+  const dir = publicDir();
+  if (dir) {
+    app.use(
+      express.static(dir, {
+        index: false,
+        dotfiles: "ignore",
+        setHeaders: (res) => res.setHeader("x-content-type-options", "nosniff"),
+      }),
+    );
+  }
 
   const page = terminalPage();
   app.get(["/", "/terminal"], (_req, res) => {
@@ -58,7 +76,8 @@ export function createApi(cfg: AggregatorConfig, store: Store, indexer: Indexer)
         "referrer-policy": "no-referrer",
         // The page talks to this origin only and embeds nothing.
         "content-security-policy":
-          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' 'self'; " +
+          "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
       })
       .send(page);
   });
