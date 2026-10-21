@@ -91,15 +91,23 @@ instead of looking dead to a platform health check.
 
 ## The terminal
 
-`public/terminal.html` is the surface, served by this service at `/`. One file, no build step: it
-reads only the API above and follows the WebSocket, so anything that can answer the API can hand
-out the page and there is no second thing to deploy or keep in step. It is read once at startup, so
-an edit needs a restart.
+`public/terminal.html` is the surface, served by this service at `/`. One file, no build step, no
+web fonts and no CDN: it reads only the API above and follows the WebSocket, so anything that can
+answer the API can hand out the page, there is no second thing to deploy or keep in step, and it
+renders with the machine unplugged. It is read once at startup, so an edit needs a restart.
 
-It shows the inventory across every indexed launchpad and chain, each coin's phase and the time it
-took to reach an open market, and the saturation table. One reading gets said out loud rather than
-left in a column: a chain with graduations inside ten minutes is flagged, because a graduation that
-fast is usually self-dealt and its turnover rate should not be believed.
+Catppuccin Mocha, flat: content sits on the page, separated by hairlines and space rather than
+wrapped in boxes. Sans for labels and prose, monospace only where figures and addresses need to
+line up. Colour carries meaning and nothing else — green is trading, blue is still filling, yellow
+is a figure not to trust, red is broken. `service/public/console.html` uses the same tokens; the two
+are served by different processes, so the style block is duplicated rather than shared, and both
+need editing together.
+
+It shows every coin on every indexed launchpad and chain, whether it is trading or still filling,
+and how long it took to reach a market — the turnover selection divides by. The crowding table sits
+above it. One reading is stated rather than left in a column: a coin that reached a market in under
+ten minutes was usually bought out by whoever launched it, so the turnover figure beside it is
+measuring that and not demand.
 
 **Trading from it is not wired up yet**, and the page says so rather than offering a button that
 does nothing: there is no `AggregatorRouter` deployment to send a trade to. The contract is the half

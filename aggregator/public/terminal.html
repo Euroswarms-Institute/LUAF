@@ -3,144 +3,262 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Terminal</title>
+<meta name="color-scheme" content="dark">
+<title>Lucreocracy — coins</title>
 <!--
-  The terminal: every launchpad's coins in one feed, ours and everyone else's.
+  Every launchpad's coins in one place, ours and everyone else's.
+  Served by the aggregator at /, read once at startup. Reads only this
+  service's own REST API and follows its WebSocket.
 
-  This exists because the router had no road. AggregatorRouter charges on
-  volume routed through any pool, which earns nothing at all until there is a
-  surface people actually trade from -- and the surface is the only part of
-  the business that does not care who launched the coin. Every clone becomes
-  inventory rather than competition.
+  No web fonts and no CDN: an operator tool for a service on a private network
+  has to render with the machine unplugged.
 
-  One file, no build step, same as the operator console. It reads the
-  aggregator's own REST API and follows its WebSocket, so a launch appears
-  here as the indexer sees it.
+  Catppuccin Mocha. Flat: content sits on the page, separated by hairlines and
+  space rather than wrapped in boxes. Sans for labels and prose, monospace only
+  where figures and addresses need to line up. Colour carries meaning and
+  nothing else — green is trading, blue is still filling, yellow is a number
+  not to trust, red is broken.
 
-  Routing is not wired yet, and the panel at the bottom says so rather than
-  offering a button that does nothing: there is no AggregatorRouter deployment
-  to send a trade to. When there is one, that is where it goes.
+  service/public/console.html uses the same tokens. The two are served by
+  different processes, so the block below is duplicated there; edit both.
 -->
 <style>
   :root {
-    --bg: #0c0c0e; --fg: #e6e6e9; --dim: #85858f; --line: #22222a;
-    --panel: #131318; --accent: #5ac8a0; --warm: #d8a24a; --bad: #c9604f;
-  }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) {
-      --bg: #f7f7f5; --fg: #17171a; --dim: #66666f; --line: #e0e0dc;
-      --panel: #fffffd; --accent: #1b7a56; --warm: #8a5d12; --bad: #a33b2a;
-    }
+    --base: #1e1e2e;
+    --mantle: #181825;
+    --crust: #11111b;
+    --surface0: #313244;
+    --surface1: #45475a;
+    --surface2: #585b70;
+    --overlay0: #6c7086;
+    --overlay1: #7f849c;
+    --subtext0: #a6adc8;
+    --subtext1: #bac2de;
+    --text: #cdd6f4;
+    --blue: #89b4fa;
+    --lavender: #b4befe;
+    --green: #a6e3a1;
+    --yellow: #f9e2af;
+    --peach: #fab387;
+    --red: #f38ba8;
+    --mauve: #cba6f7;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
   * { box-sizing: border-box; }
+  html { background: var(--base); }
   body {
-    margin: 0; background: var(--bg); color: var(--fg); padding: 20px 16px 60px;
-    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    background: var(--base);
+    color: var(--text);
+    font: 14px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 1100px; margin: 0 auto; }
-  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-  h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
-  .live { font-size: 11px; color: var(--dim); display: inline-flex; align-items: center; gap: 5px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
-  .dot.on { background: var(--accent); }
-  p.lede { color: var(--dim); margin: 0 0 18px; max-width: 72ch; font-size: 13px; }
-  section { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 13px 15px; margin-bottom: 13px; }
-  h2 { font-size: 13px; margin: 0 0 10px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-  td.num, th.num { text-align: right; }
-  tbody tr:last-child td { border-bottom: 0; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-  .tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 10px; color: var(--dim); }
-  .grad { color: var(--accent); }
-  .curve { color: var(--warm); }
-  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
-  label { font-size: 11px; color: var(--dim); display: block; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 24px; }
+
+  /* --- top line -------------------------------------------------------- */
+  header {
+    border-bottom: 1px solid var(--surface0);
+    background: var(--mantle);
+  }
+  .bar { display: flex; align-items: center; gap: 14px; height: 52px; }
+  .brand { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand em { font-style: normal; color: var(--overlay1); font-weight: 400; margin-left: 8px; }
+  .bar .fill { flex: 1; }
+  .feed { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--subtext0); }
+  .feed i { width: 7px; height: 7px; border-radius: 50%; background: var(--overlay0); flex: none; }
+  .feed.up i { background: var(--green); }
+  .feed.wait i { background: var(--yellow); }
+  .feed.down i { background: var(--red); }
+
+  /* --- figures: a row of numbers, not a row of cards -------------------- */
+  .figures { display: flex; flex-wrap: wrap; gap: 36px; padding: 22px 0 24px; }
+  .fig .v {
+    display: block;
+    font: 600 24px/1.1 var(--mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .fig .k {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--overlay1);
+    letter-spacing: 0.02em;
+  }
+
+  /* --- blocks: a heading, a hairline, content --------------------------- */
+  .block { padding-bottom: 34px; }
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--surface0);
+    margin-bottom: 2px;
+  }
+  h2 { font-size: 13px; font-weight: 600; margin: 0; color: var(--subtext1); }
+  .head .fill { flex: 1; }
+  .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  /* --- form controls --------------------------------------------------- */
   select, input {
-    background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; margin-top: 3px;
+    background: var(--surface0);
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 12px;
+    max-width: 100%;
   }
+  select { max-width: 24ch; }
+  input { width: 17ch; }
+  select:hover, input:hover { border-color: var(--surface2); }
+  select:focus, input:focus, button:focus-visible {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 26%, transparent);
+  }
+  input::placeholder { color: var(--overlay0); }
   button {
-    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer;
+    background: transparent;
+    color: var(--subtext0);
+    border: 1px solid var(--surface1);
+    border-radius: 5px;
+    padding: 4px 11px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
   }
-  button:hover { border-color: var(--accent); }
-  .note { font-size: 12px; color: var(--dim); margin: 8px 0 0; }
-  .note.bad { color: var(--bad); }
+  button:hover { color: var(--text); border-color: var(--surface2); background: var(--surface0); }
+
+  /* --- tables ---------------------------------------------------------- */
   .scroll { overflow-x: auto; }
-  .new { animation: flash 1.6s ease-out; }
-  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } to { background: transparent; } }
-  .wrap { white-space: normal; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 16px 7px 0; white-space: nowrap; }
+  th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--overlay1);
+    padding-top: 10px;
+    padding-bottom: 7px;
+  }
+  td { border-top: 1px solid var(--surface0); font-size: 13px; }
+  tbody tr:hover td { background: var(--mantle); }
+  .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  th.n { text-align: right; }
+  .sym { font-weight: 600; }
+  .sym small { font-weight: 400; color: var(--overlay1); margin-left: 7px; font-size: 12px; }
+  .pad { color: var(--subtext0); font-size: 12px; }
+  .addr { font-family: var(--mono); font-size: 12px; color: var(--overlay1); }
+  .trading { color: var(--green); }
+  .filling { color: var(--blue); }
+  .flag { color: var(--yellow); }
+
+  /* --- messages -------------------------------------------------------- */
+  .msg { font-size: 12px; color: var(--overlay1); margin: 12px 0 0; }
+  .msg.warn { color: var(--yellow); }
+  .msg.bad { color: var(--red); }
+  .lede { font-size: 13px; color: var(--subtext0); margin: 10px 0 14px; max-width: 76ch; }
+  footer { border-top: 1px solid var(--surface0); padding: 18px 0 40px; }
+  footer p { font-size: 12px; color: var(--overlay1); margin: 0; max-width: 90ch; }
+  code { font-family: var(--mono); font-size: 12px; color: var(--subtext0); }
+
+  tr.fresh td { animation: in 1.4s ease-out; }
+  @keyframes in { from { background: color-mix(in srgb, var(--blue) 20%, transparent); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { tr.fresh td { animation: none; } }
+
+  @media (max-width: 680px) {
+    .wrap { padding: 0 16px; }
+    .figures { gap: 24px 28px; padding: 18px 0 20px; }
+    .fig .v { font-size: 20px; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Terminal</h1>
-    <span class="live"><span class="dot" id="dot"></span><span id="live-text">connecting</span></span>
-  </header>
-  <p class="lede">
-    Every coin on every indexed launchpad, whoever opened it. Launches and graduations arrive as
-    the indexer sees them.
-  </p>
+<header>
+  <div class="wrap bar">
+    <span class="brand">Lucreocracy<em>coins</em></span>
+    <span class="fill"></span>
+    <span class="feed" id="feed"><i></i><span id="feed-text">connecting</span></span>
+  </div>
+</header>
 
-  <section>
-    <h2>How crowded it is</h2>
-    <div class="controls">
-      <label>Window
-        <select id="window">
-          <option value="1">1 day</option>
-          <option value="7" selected>7 days</option>
-          <option value="30">30 days</option>
-          <option value="90">90 days</option>
-          <option value="365">1 year</option>
+<div class="wrap">
+  <div class="figures">
+    <div class="fig"><span class="v" id="f-coins">—</span><span class="k">Coins indexed</span></div>
+    <div class="fig"><span class="v" id="f-trading">—</span><span class="k">Trading</span></div>
+    <div class="fig"><span class="v" id="f-pads">—</span><span class="k">Launchpads</span></div>
+    <div class="fig"><span class="v" id="f-chains">—</span><span class="k">Chains</span></div>
+  </div>
+
+  <div class="block">
+    <div class="head">
+      <h2>How crowded each chain is</h2>
+      <span class="fill"></span>
+      <div class="filters">
+        <select id="window" aria-label="Window">
+          <option value="1">Last day</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="365">Last year</option>
         </select>
-      </label>
-      <button id="reload">Reload</button>
+        <button id="reload">Refresh</button>
+      </div>
     </div>
     <div class="scroll"><table>
       <thead><tr>
-        <th>Chain</th><th class="num">Launches</th><th class="num">Graduated</th>
-        <th class="num">Rate</th><th class="num">Median turnover</th><th class="num">Turnovers/yr</th><th class="num">Under 10 min</th>
+        <th>Chain</th><th class="n">Launched</th><th class="n">Trading</th>
+        <th class="n">Reached market</th><th class="n">Median time</th><th class="n">Turnovers a year</th><th class="n">Under 10 min</th>
       </tr></thead>
       <tbody id="sat"></tbody>
     </table></div>
-    <p class="note" id="sat-note"></p>
-  </section>
+    <p class="msg" id="sat-note"></p>
+  </div>
 
-  <section>
-    <h2>Inventory</h2>
-    <div class="controls">
-      <label>Chain <select id="chain"><option value="">all</option></select></label>
-      <label>Launchpad <select id="source"><option value="">all</option></select></label>
-      <label>Show <select id="limit">
-        <option>50</option><option selected>100</option><option>250</option><option>500</option>
-      </select></label>
-      <label>Filter <input id="q" placeholder="name, symbol or address" autocomplete="off" spellcheck="false"></label>
+  <div class="block">
+    <div class="head">
+      <h2>Coins</h2>
+      <span class="fill"></span>
+      <div class="filters">
+        <select id="chain" aria-label="Chain"><option value="">All chains</option></select>
+        <select id="source" aria-label="Launchpad"><option value="">All launchpads</option></select>
+        <select id="limit" aria-label="How many">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="250">250</option>
+          <option value="500">500</option>
+        </select>
+        <input id="q" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search">
+      </div>
     </div>
+    <p class="lede">
+      A launchpad earns from the coins it launched. This earns from all of them.
+    </p>
     <div class="scroll"><table>
       <thead><tr>
-        <th>Coin</th><th>Launchpad</th><th class="num">Chain</th><th>Phase</th>
-        <th class="num">Opened</th><th class="num">Took</th><th>Address</th>
+        <th>Coin</th><th>Launchpad</th><th>Chain</th><th>Status</th>
+        <th class="n">Launched</th><th class="n">Time to market</th><th>Address</th>
       </tr></thead>
       <tbody id="coins"></tbody>
     </table></div>
-    <p class="note" id="coins-note"></p>
-  </section>
+    <p class="msg" id="coins-note"></p>
+  </div>
+</div>
 
-  <section>
-    <h2>Routing</h2>
-    <p class="note" id="route-note">
-      Trading from here is not wired up: there is no <span class="mono">AggregatorRouter</span>
-      deployment to send a trade to yet. The contract charges its fee on the input before the swap
-      and pays a member launchpad its share, so the fee works on volume from any pool — but it has
-      to exist on a chain first. Deploy it with
-      <span class="mono">npm run deploy:aggregator -w contracts</span>, then this panel is where
-      the trade goes.
+<footer>
+  <div class="wrap">
+    <p id="route-note">
+      Trading from here is not wired up yet: there is no <code>AggregatorRouter</code> deployed to
+      send a trade to. The contract takes its fee from the input before the swap and pays a member
+      launchpad a share of it, so it earns on volume from any pool — but it has to exist on a chain
+      first. Deploy it with <code>npm run deploy:aggregator -w contracts</code>.
     </p>
-  </section>
-</main>
+  </div>
+</footer>
 
 <script>
 "use strict";
@@ -149,8 +267,8 @@ let sources = [];
 let chains = [];
 let coins = [];
 
-const fmtInt = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US"));
-const pct = (r) => (r === null || r === undefined ? "—" : (r * 100).toFixed(0) + "%");
+const int = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US"));
+const pct = (r) => (r === null || r === undefined ? "—" : Math.round(r * 100) + "%");
 
 /** A duration in seconds, as the largest unit that still reads. */
 function dur(secs) {
@@ -162,10 +280,9 @@ function dur(secs) {
   return Math.round(s / 86400) + "d";
 }
 
-/** How long ago, from a unix timestamp in seconds. */
 function ago(ts) {
   if (!ts) return "—";
-  return dur(Math.max(0, Math.floor(Date.now() / 1000) - Number(ts))) + " ago";
+  return dur(Math.max(0, Math.floor(Date.now() / 1000) - Number(ts)));
 }
 
 const short = (a) => (a && a.length > 12 ? a.slice(0, 6) + "…" + a.slice(-4) : a || "");
@@ -178,12 +295,24 @@ async function get(path) {
   return r.json();
 }
 
-function setNote(el, text, bad) {
+function msg(el, text, kind) {
   el.textContent = text || "";
-  el.className = "note" + (bad ? " bad" : "");
+  el.className = "msg" + (kind ? " " + kind : "");
 }
 
-// --- saturation -----------------------------------------------------------
+function feed(state, text) {
+  $("feed").className = "feed " + state;
+  $("feed-text").textContent = text;
+}
+
+function cell(text, cls) {
+  const td = document.createElement("td");
+  if (cls) td.className = cls;
+  td.textContent = text;
+  return td;
+}
+
+// --- how crowded ----------------------------------------------------------
 
 async function loadSaturation() {
   const body = $("sat");
@@ -191,106 +320,99 @@ async function loadSaturation() {
     const s = await get("/api/saturation?windowDays=" + encodeURIComponent($("window").value));
     body.textContent = "";
     if (!s.chains.length) {
-      setNote($("sat-note"), "Nothing indexed in this window yet.");
+      msg($("sat-note"), "Nothing launched in this window. Try a longer one.");
       return;
     }
     for (const c of s.chains) {
       const tr = document.createElement("tr");
-      const cells = [
-        [chainLabel(c.chainId), ""],
-        [fmtInt(c.launches), "num"],
-        [fmtInt(c.graduations), "num"],
-        [pct(c.graduationRate), "num"],
-        [dur(c.medianTurnoverSecs), "num"],
-        [fmtInt(c.turnoversPerYear), "num"],
-        [fmtInt(c.fastGraduations), "num"],
-      ];
-      for (const [text, cls] of cells) {
-        const td = document.createElement("td");
-        td.className = cls;
-        td.textContent = text;
-        tr.append(td);
-      }
+      tr.append(
+        cell(chainLabel(c.chainId)),
+        cell(int(c.launches), "n"),
+        cell(int(c.graduations), "n"),
+        cell(pct(c.graduationRate), "n"),
+        cell(dur(c.medianTurnoverSecs), "n"),
+        cell(int(c.turnoversPerYear), "n"),
+        cell(int(c.fastGraduations), c.fastGraduations > 0 ? "n flag" : "n"),
+      );
       body.append(tr);
     }
-    // The one reading worth saying out loud: a chain whose coins graduate in
-    // minutes is not a healthy market, it is one being worked.
+    // Worth saying rather than leaving in a column: a coin that reaches an open
+    // market in minutes was usually bought out by whoever launched it, so the
+    // turnover figure beside it is measuring that and not demand.
     const fast = s.chains.filter((c) => c.fastGraduations > 0);
-    setNote(
+    msg(
       $("sat-note"),
       fast.length
-        ? fast.map((c) => chainLabel(c.chainId) + ": " + c.fastGraduations + " graduated inside ten minutes").join("; ") +
-            ". A graduation that fast is usually self-dealt, so read the turnover rate on those chains with suspicion."
+        ? fast.map((c) => chainLabel(c.chainId) + ": " + c.fastGraduations).join(", ") +
+            " reached a market in under ten minutes, which usually means the launcher bought it out. " +
+            "Read the turnover on those chains as that, not as demand."
         : "",
+      fast.length ? "warn" : "",
     );
   } catch (e) {
     body.textContent = "";
-    setNote($("sat-note"), "Saturation unavailable: " + e.message, true);
+    msg($("sat-note"), "Could not load this: " + e.message, "bad");
   }
 }
 
-// --- inventory ------------------------------------------------------------
-
-function renderCoins() {
-  const body = $("coins");
-  const q = $("q").value.trim().toLowerCase();
-  const rows = coins.filter((c) => {
-    if (!q) return true;
-    return (
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.symbol || "").toLowerCase().includes(q) ||
-      (c.address || "").toLowerCase().includes(q)
-    );
-  });
-  body.textContent = "";
-  for (const c of rows) {
-    body.append(coinRow(c));
-  }
-  setNote(
-    $("coins-note"),
-    rows.length ? rows.length + " of " + coins.length + " shown" : coins.length ? "Nothing matches that filter." : "Nothing indexed yet.",
-  );
-}
+// --- coins ----------------------------------------------------------------
 
 function coinRow(c) {
   const tr = document.createElement("tr");
   tr.dataset.address = (c.address || "").toLowerCase();
 
-  const name = document.createElement("td");
-  name.className = "wrap";
-  name.textContent = c.symbol ? c.symbol + (c.name ? " · " + c.name : "") : c.name || "—";
+  const sym = document.createElement("td");
+  sym.className = "sym";
+  sym.textContent = c.symbol || "—";
+  if (c.name && c.name !== c.symbol) {
+    const n = document.createElement("small");
+    n.textContent = c.name;
+    sym.append(n);
+  }
 
-  const src = document.createElement("td");
-  const tag = document.createElement("span");
-  tag.className = "tag";
-  tag.textContent = sourceLabel(c.source);
-  src.append(tag);
-
-  const chain = document.createElement("td");
-  chain.className = "num";
-  chain.textContent = chainLabel(c.chainId);
-
-  const phase = document.createElement("td");
-  phase.className = c.graduated ? "grad" : "curve";
-  phase.textContent = c.graduated ? "open market" : "on the curve";
-
-  const opened = document.createElement("td");
-  opened.className = "num";
-  opened.textContent = ago(c.launchedAt);
-
-  // Time from launch to graduation: the turnover the foundry's fitness divides
-  // by. Blank while a coin is still filling.
-  const took = document.createElement("td");
-  took.className = "num";
-  took.textContent = c.graduated && c.graduatedAt && c.launchedAt ? dur(c.graduatedAt - c.launchedAt) : "—";
-
-  const addr = document.createElement("td");
-  addr.className = "mono";
+  const addr = cell(short(c.address), "addr");
   addr.title = c.address || "";
-  addr.textContent = short(c.address);
 
-  tr.append(name, src, chain, phase, opened, took, addr);
+  tr.append(
+    sym,
+    cell(sourceLabel(c.source), "pad"),
+    cell(chainLabel(c.chainId), "pad"),
+    cell(c.graduated ? "Trading" : "Filling", c.graduated ? "trading" : "filling"),
+    cell(ago(c.launchedAt), "n"),
+    // Launch to open market: the turnover selection divides by. A dash while
+    // a coin is still filling — never a guess.
+    cell(c.graduated && c.graduatedAt && c.launchedAt ? dur(c.graduatedAt - c.launchedAt) : "—", "n"),
+    addr,
+  );
   return tr;
+}
+
+function figures() {
+  $("f-coins").textContent = int(coins.length);
+  $("f-trading").textContent = int(coins.filter((c) => c.graduated).length);
+}
+
+function renderCoins() {
+  const body = $("coins");
+  const q = $("q").value.trim().toLowerCase();
+  const rows = coins.filter(
+    (c) =>
+      !q ||
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.symbol || "").toLowerCase().includes(q) ||
+      (c.address || "").toLowerCase().includes(q),
+  );
+  body.textContent = "";
+  for (const c of rows) body.append(coinRow(c));
+  figures();
+  msg(
+    $("coins-note"),
+    q && rows.length !== coins.length
+      ? rows.length + " of " + coins.length + " match"
+      : coins.length
+        ? ""
+        : "Nothing indexed yet.",
+  );
 }
 
 async function loadCoins() {
@@ -298,44 +420,39 @@ async function loadCoins() {
     const params = new URLSearchParams({ limit: $("limit").value });
     if ($("chain").value) params.set("chainId", $("chain").value);
     if ($("source").value) params.set("source", $("source").value);
-    const r = await get("/api/coins?" + params.toString());
-    coins = r.coins;
+    coins = (await get("/api/coins?" + params.toString())).coins;
     renderCoins();
   } catch (e) {
-    setNote($("coins-note"), "Inventory unavailable: " + e.message, true);
+    msg($("coins-note"), "Could not load coins: " + e.message, "bad");
   }
 }
 
-// --- the live feed --------------------------------------------------------
-
-function live(on, text) {
-  $("dot").className = "dot" + (on ? " on" : "");
-  $("live-text").textContent = text;
-}
+// --- live -----------------------------------------------------------------
 
 function connect() {
   let ws;
   try {
     ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
   } catch (e) {
-    live(false, "no live feed");
+    feed("down", "no live updates");
     return;
   }
+  feed("wait", "connecting");
   ws.onopen = () => {
-    live(true, "live");
     for (const channel of ["coin:launched", "coin:graduated"]) {
       ws.send(JSON.stringify({ op: "subscribe", channel: channel, token: "*" }));
     }
+    feed("up", "live");
   };
   ws.onmessage = (ev) => {
-    let msg;
-    try { msg = JSON.parse(ev.data); } catch (e) { return; }
-    if (msg.channel === "coin:launched") onLaunched(msg.data);
-    else if (msg.channel === "coin:graduated") onGraduated(msg.data);
+    let m;
+    try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.channel === "coin:launched") onLaunched(m.data);
+    else if (m.channel === "coin:graduated") onGraduated(m.data);
   };
   ws.onclose = () => {
-    live(false, "reconnecting");
-    // The feed is a convenience; the tables reload on their own either way.
+    feed("wait", "reconnecting");
+    // Live updates are a convenience; the tables refresh on their own anyway.
     setTimeout(connect, 4000);
   };
   ws.onerror = () => ws.close();
@@ -345,15 +462,15 @@ function onLaunched(c) {
   if (!c || !c.address) return;
   const addr = String(c.address).toLowerCase();
   if (coins.some((x) => (x.address || "").toLowerCase() === addr)) return;
-  // Respect the filters: a launch on a chain the viewer filtered out should
-  // not appear just because it is new.
+  // Respect the filters: something new on a chain the viewer filtered out
+  // should not appear just because it is new.
   if ($("chain").value && String(c.chainId) !== $("chain").value) return;
   if ($("source").value && c.source !== $("source").value) return;
   coins.unshift(c);
   const row = coinRow(c);
-  row.classList.add("new");
+  row.className = "fresh";
   $("coins").prepend(row);
-  setNote($("coins-note"), coins.length + " shown");
+  figures();
 }
 
 function onGraduated(c) {
@@ -366,18 +483,23 @@ function onGraduated(c) {
   }
   const row = $("coins").querySelector('tr[data-address="' + addr + '"]');
   if (row && held) {
-    row.replaceWith(Object.assign(coinRow(held), { className: "new" }));
+    const next = coinRow(held);
+    next.className = "fresh";
+    row.replaceWith(next);
   }
+  figures();
   loadSaturation();
 }
 
-// --- wiring ---------------------------------------------------------------
+// --- start ----------------------------------------------------------------
 
-async function boot() {
+async function start() {
   try {
     const s = await get("/api/sources");
     chains = s.chains;
     sources = s.sources;
+    $("f-chains").textContent = int(chains.length);
+    $("f-pads").textContent = int(sources.length);
     for (const c of chains) {
       const o = document.createElement("option");
       o.value = String(c.chainId);
@@ -387,18 +509,24 @@ async function boot() {
     for (const src of sources) {
       const o = document.createElement("option");
       o.value = src.id;
-      o.textContent = src.label + " (" + chainLabel(src.chainId) + ")";
+      // Naming the chain on every launchpad is only useful when there is more
+      // than one; otherwise it is the same word on every line.
+      o.textContent = chains.length > 1 ? src.label + " · " + chainLabel(src.chainId) : src.label;
+      o.title = src.label + " · " + chainLabel(src.chainId);
       $("source").append(o);
     }
   } catch (e) {
-    setNote($("coins-note"), "The aggregator is not answering: " + e.message, true);
-    live(false, "offline");
+    msg($("coins-note"), "The aggregator is not answering: " + e.message, "bad");
+    feed("down", "offline");
     return;
   }
   await Promise.all([loadCoins(), loadSaturation()]);
   connect();
-  // A slow backstop, so a dropped feed still converges.
-  setInterval(() => { if (!document.hidden) { loadCoins(); loadSaturation(); } }, 60000);
+  setInterval(() => {
+    if (document.hidden) return;
+    loadCoins();
+    loadSaturation();
+  }, 60000);
 }
 
 $("reload").onclick = () => { loadCoins(); loadSaturation(); };
@@ -408,7 +536,7 @@ $("source").onchange = loadCoins;
 $("limit").onchange = loadCoins;
 $("q").oninput = renderCoins;
 
-boot();
+start();
 </script>
 </body>
 </html>

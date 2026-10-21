@@ -3,109 +3,231 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex, nofollow">
-<title>Launch console</title>
+<title>Lucreocracy — launch console</title>
 <!--
   The operator's console, served by the service it drives.
 
-  One file, no build step and no framework on purpose. This page is a form and
-  a status table; dragging a bundler and a wallet-connector library into the
-  repo to render it would cost more than it is worth, and every dependency here
-  would be one more thing between an operator and a signature they are about to
-  give.
+  One file, no build step, no framework, no web fonts and no CDN. This page is
+  a form and a status table; a bundler and a wallet-connector library would
+  cost more than they are worth, and every dependency here is one more thing
+  between an operator and a signature they are about to give.
 
   It holds no secret. A grant token never reaches a browser: the page proves a
-  wallet instead and receives a short session bound to one launchpad. The
-  spending limit it shows is the service's own, and is what bounds the damage
-  if this session is ever stolen.
+  wallet and receives a short session bound to one launchpad. The spending
+  limit it shows is the service's own, and is what bounds the damage if this
+  session is ever stolen.
+
+  Same tokens as aggregator/public/terminal.html. The two are served by
+  different processes, so the block below is duplicated there; edit both.
+
+  Colour carries one real fact: when the service can actually sign, the launch
+  button and the signing line are red. Live is also its own button rather than
+  a checkbox, because a toggle left on from an hour ago is how someone spends
+  ETH they did not mean to.
 -->
 <style>
   :root {
-    --bg: #11100e; --fg: #e8e4dc; --dim: #8d877c; --line: #2b2825;
-    --panel: #181613; --accent: #d8a24a; --warn: #c9604f; --ok: #6f9c5a;
-  }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) {
-      --bg: #f6f3ec; --fg: #1d1a16; --dim: #6b655c; --line: #ded7c9;
-      --panel: #fffdf8; --accent: #8a5d12; --warn: #a33b2a; --ok: #3f6b2c;
-    }
+    --base: #1e1e2e;
+    --mantle: #181825;
+    --surface0: #313244;
+    --surface1: #45475a;
+    --surface2: #585b70;
+    --overlay0: #6c7086;
+    --overlay1: #7f849c;
+    --subtext0: #a6adc8;
+    --subtext1: #bac2de;
+    --text: #cdd6f4;
+    --blue: #89b4fa;
+    --green: #a6e3a1;
+    --yellow: #f9e2af;
+    --red: #f38ba8;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
   * { box-sizing: border-box; }
+  html { background: var(--base); }
   body {
-    margin: 0; background: var(--bg); color: var(--fg); padding: 24px 16px 64px;
-    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    background: var(--base);
+    color: var(--text);
+    font: 14px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 760px; margin: 0 auto; }
-  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  h2 { font-size: 15px; margin: 30px 0 8px; }
-  p.lede { color: var(--dim); margin: 0 0 20px; max-width: 60ch; font-size: 13px; }
-  section { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
-  dl { display: grid; grid-template-columns: minmax(10ch, 20ch) 1fr; gap: 4px 16px; margin: 0; font-size: 13px; }
-  dt { color: var(--dim); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header { border-bottom: 1px solid var(--surface0); background: var(--mantle); }
+  .bar { display: flex; align-items: center; gap: 14px; height: 52px; flex-wrap: wrap; }
+  .brand { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand em { font-style: normal; color: var(--overlay1); font-weight: 400; margin-left: 8px; }
+  .bar .fill { flex: 1; }
+  .who { font-size: 12px; color: var(--overlay1); font-family: var(--mono); }
+
+  .figures { display: flex; flex-wrap: wrap; gap: 34px; padding: 22px 0 24px; }
+  .fig .v {
+    display: block;
+    font: 600 22px/1.1 var(--mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .fig .v.hot { color: var(--red); }
+  .fig .v.cool { color: var(--green); }
+  .fig .k { display: block; margin-top: 5px; font-size: 11px; color: var(--overlay1); }
+
+  .block { padding-bottom: 32px; }
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--surface0);
+    margin-bottom: 14px;
+  }
+  h2 { font-size: 13px; font-weight: 600; margin: 0; color: var(--subtext1); }
+  .head .fill { flex: 1; }
+
+  dl {
+    display: grid;
+    grid-template-columns: minmax(12ch, 20ch) 1fr;
+    gap: 7px 20px;
+    margin: 0;
+    font-size: 13px;
+  }
+  dt { color: var(--overlay1); font-size: 12px; }
   dd { margin: 0; overflow-wrap: anywhere; }
-  label { display: block; margin-bottom: 10px; font-size: 13px; }
-  label > span { display: block; color: var(--dim); margin-bottom: 3px; }
+  dd.mono, .mono { font-family: var(--mono); font-size: 12px; }
+
+  label { display: block; margin-bottom: 13px; }
+  label > span { display: block; color: var(--overlay1); font-size: 12px; margin-bottom: 5px; }
   input, select, textarea {
-    width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 14px;
+    width: 100%;
+    max-width: 100%;
+    background: var(--surface0);
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 6px 9px;
+    font: inherit;
+    font-size: 13px;
   }
-  textarea { resize: vertical; min-height: 64px; }
+  textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
+  input::placeholder, textarea::placeholder { color: var(--overlay0); }
+  input:hover, select:hover, textarea:hover { border-color: var(--surface2); }
+  input:focus, select:focus, textarea:focus, button:focus-visible {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 26%, transparent);
+  }
+
   button {
-    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer;
+    background: transparent;
+    color: var(--subtext0);
+    border: 1px solid var(--surface1);
+    border-radius: 5px;
+    padding: 6px 13px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
   }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button.go { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  button:hover:not(:disabled) { color: var(--text); border-color: var(--surface2); background: var(--surface0); }
+  button.go { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, transparent); }
+  button.go:hover:not(:disabled) { background: color-mix(in srgb, var(--blue) 14%, transparent); border-color: var(--blue); color: var(--blue); }
+  /* The one button that spends money. */
+  button.fire { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); font-weight: 600; }
+  button.fire:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 15%, transparent); border-color: var(--red); color: var(--red); }
+  button:disabled { opacity: 0.38; cursor: not-allowed; }
+  .row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 14px; }
+
   pre {
-    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
-    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 240px;
-    overflow: auto; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere;
+    background: var(--mantle);
+    border: 1px solid var(--surface0);
+    border-radius: 6px;
+    padding: 11px 12px;
+    font: 12px/1.6 var(--mono);
+    color: var(--subtext0);
+    max-height: 260px;
+    overflow: auto;
+    margin: 14px 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .note { font-size: 13px; margin: 10px 0 0; }
-  .note.bad { color: var(--warn); }
-  .note.good { color: var(--ok); }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
-  th, td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
-  th { color: var(--dim); font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { text-align: left; padding: 7px 16px 7px 0; white-space: nowrap; }
+  th { font-size: 11px; font-weight: 500; color: var(--overlay1); padding-bottom: 7px; }
+  td { border-top: 1px solid var(--surface0); font-size: 13px; }
+  .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  th.n { text-align: right; }
+
+  .msg { font-size: 12px; color: var(--overlay1); margin: 12px 0 0; }
+  .msg.bad { color: var(--red); }
+  .msg.good { color: var(--green); }
+  .lede { font-size: 13px; color: var(--subtext0); margin: 0 0 16px; max-width: 74ch; }
   .hidden { display: none; }
+
+  @media (max-width: 680px) {
+    .wrap { padding: 0 16px; }
+    .figures { gap: 22px 26px; padding: 18px 0 20px; }
+    .fig .v { font-size: 19px; }
+    dl { grid-template-columns: 1fr; gap: 2px 0; }
+    dt { margin-top: 9px; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>Launch console</h1>
-  <p class="lede">
-    Brief in, coin out: research, design, validate, then launch into this launchpad's own factory.
-    Nothing is signed unless you ask for it, and never beyond this launchpad's spending limit.
-  </p>
+<header>
+  <div class="wrap bar">
+    <span class="brand">Lucreocracy<em>launch console</em></span>
+    <span class="fill"></span>
+    <span class="who" id="who"></span>
+  </div>
+</header>
 
-  <section id="signin">
-    <dl>
-      <dt>Launchpad</dt>
-      <dd><input id="tenant" placeholder="the launchpad's name, e.g. acme" autocomplete="off" spellcheck="false"></dd>
-      <dt>Wallet</dt>
-      <dd id="wallet" class="mono">not connected</dd>
-    </dl>
-    <div class="row">
-      <button id="connect">Connect a wallet</button>
-      <button id="auth" class="go" disabled>Sign in</button>
+<div class="wrap">
+  <div id="signin">
+    <div class="block">
+      <div class="head"><h2>Sign in</h2></div>
+      <p class="lede">
+        Your wallet proves who you are. The message you sign says what it allows: designing and
+        launching coins on this launchpad, which spends the operator's ETH on opening buys.
+      </p>
+      <label><span>Launchpad</span>
+        <input id="tenant" placeholder="e.g. acme" autocomplete="off" spellcheck="false">
+      </label>
+      <dl>
+        <dt>Wallet</dt>
+        <dd class="mono" id="wallet">not connected</dd>
+      </dl>
+      <div class="row">
+        <button id="connect">Connect wallet</button>
+        <button id="auth" class="go" disabled>Sign in</button>
+      </div>
+      <p id="signin-note" class="msg hidden"></p>
     </div>
-    <p id="signin-note" class="note hidden"></p>
-  </section>
+  </div>
 
   <div id="app" class="hidden">
-    <section>
-      <h2 style="margin-top:0">Allowance</h2>
-      <dl id="ready"></dl>
-      <p id="allowance-note" class="note hidden"></p>
-      <div class="row"><button id="signout">Sign out</button></div>
-    </section>
+    <div class="figures">
+      <div class="fig"><span class="v" id="f-launches">—</span><span class="k">Launches left</span></div>
+      <div class="fig"><span class="v" id="f-budget">—</span><span class="k">Opening buys left</span></div>
+      <div class="fig"><span class="v" id="f-spent">—</span><span class="k">Spent so far</span></div>
+      <div class="fig"><span class="v" id="f-signing">—</span><span class="k">Signing</span></div>
+    </div>
 
-    <section>
-      <h2 style="margin-top:0">Design</h2>
-      <p class="lede" style="margin-bottom:12px">
+    <div class="block">
+      <div class="head">
+        <h2>This launchpad</h2>
+        <span class="fill"></span>
+        <button id="signout">Sign out</button>
+      </div>
+      <dl id="ready"></dl>
+      <p id="allowance-note" class="msg hidden"></p>
+    </div>
+
+    <div class="block">
+      <div class="head"><h2>Design a coin</h2></div>
+      <p class="lede">
         Leave the brief empty to have one written from the profile. A dry run simulates the launch
         against the real factory, so it fails for the same reasons a live one would.
       </p>
@@ -116,40 +238,42 @@
       <label><span>Opening buy (ETH)</span><input id="firstBuy" value="0" inputmode="decimal"></label>
       <div class="row">
         <button id="design">Design only</button>
-        <button id="dry">Dry run</button>
-        <!-- Its own button, not a checkbox: a toggle left on from an hour ago
-             is how someone spends ETH they did not mean to. -->
-        <button id="live" class="go" disabled>Launch for real</button>
+        <button id="dry" class="go">Dry run</button>
+        <button id="live" class="fire" disabled>Launch for real</button>
       </div>
-      <p id="run-note" class="note hidden"></p>
-      <dl id="run" class="hidden" style="margin-top:12px"></dl>
+      <p id="run-note" class="msg hidden"></p>
+      <dl id="run" class="hidden" style="margin-top:14px"></dl>
       <div class="row hidden" id="run-actions"><button id="cancel">Cancel</button></div>
       <pre id="log" class="hidden"></pre>
-    </section>
+    </div>
 
-    <section>
-      <h2 style="margin-top:0">The loop</h2>
-      <p class="lede" style="margin-bottom:12px">
-        Launches on its own, breeding the formats that earned and reaping the ones that did not. It
-        stops on its income target, its launch cap, or when the market stops absorbing new coins —
-        the last of which is the one worth reading, because it means supply ran ahead of demand
-        rather than running out of work.
-      </p>
-      <dl id="loop"></dl>
-      <div class="row">
+    <div class="block">
+      <div class="head">
+        <h2>The loop</h2>
+        <span class="fill"></span>
         <button id="loop-start">Start</button>
         <button id="loop-stop">Stop</button>
       </div>
-      <p id="loop-note" class="note hidden"></p>
-    </section>
+      <p class="lede">
+        Launches on its own, breeding the formats that earned and reaping the ones that did not. It
+        stops on its income target, its launch cap, or when the market stops absorbing new coins
+        — the last of which is the one worth reading, because it means supply ran ahead of demand
+        rather than running out of work.
+      </p>
+      <dl id="loop"></dl>
+      <p id="loop-note" class="msg hidden"></p>
+    </div>
 
-    <section>
-      <h2 style="margin-top:0">What it earned</h2>
-      <div class="row"><button id="income-read">Read the fee events</button></div>
+    <div class="block">
+      <div class="head">
+        <h2>Fee income</h2>
+        <span class="fill"></span>
+        <button id="income-read">Read from chain</button>
+      </div>
       <div id="income"></div>
-    </section>
+    </div>
   </div>
-</main>
+</div>
 
 <script>
 "use strict";
@@ -326,24 +450,49 @@ function render(ready) {
     if (poll) { clearInterval(poll); poll = null; }
     show($("app"), false);
     show($("signin"), true);
+    // Signing out must not leave somebody else's figures on screen.
+    for (const id of ["f-launches", "f-budget", "f-spent", "f-signing"]) {
+      $(id).textContent = "\u2014";
+      $(id).className = "v";
+    }
+    $("who").textContent = "";
     return;
   }
   const b = ready.budget || {};
-  const live =
-    ready.canSign ? "possible"
-      : ready.maySign ? "off: the service is in dry-run mode"
-      : "off: this launchpad's grant may not sign";
+  const signing = ready.canSign
+    ? "On"
+    : ready.maySign
+      ? "Off"
+      : "Off";
+  const why = ready.canSign
+    ? "a live request will launch for real"
+    : ready.maySign
+      ? "the service is running in dry-run mode"
+      : "this launchpad's grant is not allowed to sign";
+
+  // The figures across the top are what an operator checks before pressing
+  // anything, so they stay put while the page scrolls.
+  $("f-launches").textContent = b.maxLaunches === undefined ? "∞" : String(b.launchesLeft);
+  $("f-budget").textContent =
+    b.maxSpendWei === undefined ? "∞" : ethFromWei(b.spendLeftWei || "0", 3);
+  $("f-spent").textContent = ethFromWei(b.spentWei || "0", 3);
+  const sign = $("f-signing");
+  sign.textContent = signing;
+  // Red when it can actually spend money. The only thing colour says here.
+  sign.className = "v " + (ready.canSign ? "hot" : "cool");
+  $("who").textContent = (ready.as && ready.as.operator) || "";
+
   rows($("ready"), [
-    ["Launchpad", ready.tenant + " on chain " + ready.chainId],
+    ["Name", ready.tenant],
+    ["Chain", String(ready.chainId)],
     ["Factory", ready.factory],
     ["Designer", ready.model],
-    ["Signed in as", (ready.as && ready.as.operator) || "—"],
     ["Launches left", b.maxLaunches === undefined ? "no cap" : b.launchesLeft + " of " + b.maxLaunches],
     ["Opening buys left", b.maxSpendWei === undefined
       ? "no cap"
       : ethFromWei(b.spendLeftWei || "0", 4) + " ETH of " + ethFromWei(b.maxSpendWei, 4) + " ETH"],
     ["Spent so far", ethFromWei(b.spentWei || "0", 4) + " ETH over " + (b.launches || 0) + " launches"],
-    ["Live launches", live],
+    ["Live launches", signing.toLowerCase() + " — " + why],
   ]);
   say($("allowance-note"), b.broken || "", b.broken ? "bad" : null);
 
@@ -419,12 +568,12 @@ async function watch() {
   try { r = await call("/runs/" + runId); }
   catch (e) { say($("run-note"), e.message, "bad"); return; }
 
-  const out = [["Run", r.state + (r.live ? " (live)" : " (dry run)")]];
+  const out = [["Run", r.state + (r.live ? ", live" : ", dry run")]];
   if (r.result) {
     out.push(["Design", r.result.name + " ($" + r.result.ticker + "), " + r.result.lines + " lines"]);
     out.push(["Brief", r.result.brief]);
     if (r.result.token) {
-      out.push(["Coin", r.result.dryRun ? r.result.token + " (predicted, nothing signed)" : r.result.token]);
+      out.push(["Coin", r.result.dryRun ? r.result.token + " (predicted \u2014 nothing was signed)" : r.result.token]);
     }
     if (r.result.txHash) out.push(["Transaction", r.result.txHash]);
     out.push(["Written to", r.result.dir]);
@@ -456,7 +605,8 @@ async function readIncome() {
     host.append(dl);
     if ((inc.specs || []).length) {
       const t = document.createElement("table");
-      t.innerHTML = "<thead><tr><th>Format</th><th>Coins</th><th>Graduated</th><th>Fees (ETH)</th></tr></thead>";
+      t.innerHTML =
+      '<thead><tr><th>Format</th><th class="n">Coins</th><th class="n">Trading</th><th class="n">Fees (ETH)</th></tr></thead>';
       const body = document.createElement("tbody");
       for (const s of inc.specs) {
         const tr = document.createElement("tr");
