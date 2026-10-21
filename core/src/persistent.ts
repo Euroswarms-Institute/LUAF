@@ -15,7 +15,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { LauncherDeployment, LlmConfig, RunConfig } from "./config.js";
-import { collectIncome, bySpec } from "./income.js";
+import { absorptionFrom, defaultAbsorptionLimits, mayLaunch, type AbsorptionLimits, type AbsorptionState } from "./absorption.js";
+import { collectIncome, bySpec, type TokenIncome } from "./income.js";
 import { loadRivals } from "./rivals.js";
 import { runOnce, type PipelineResult } from "./pipeline.js";
 import {
@@ -51,6 +52,9 @@ export interface PersistentRequest {
    *  copies of a format and so understates how crowded the market is. */
   aggregatorUrl?: string;
   selection?: SelectionConfig;
+  /** Ceilings on unsold stock. Without them the loop keeps producing into a
+   *  glut, which is the one failure the anarchy of production cannot see. */
+  absorption?: AbsorptionLimits;
   log?: (line: string) => void;
   signal?: AbortSignal;
 }
@@ -61,7 +65,9 @@ export interface PersistentResult {
   epochs: number;
   incomeEthWei: bigint;
   population: Population;
-  stopped: "target" | "max-launches" | "exhausted" | "aborted";
+  stopped: "target" | "max-launches" | "exhausted" | "glutted" | "aborted";
+  /** The last absorption reading, so the caller can say why it stopped. */
+  absorption?: AbsorptionState;
   results: PipelineResult[];
 }
 
@@ -95,12 +101,16 @@ export async function runPersistent(req: PersistentRequest): Promise<PersistentR
   let failures = 0;
   let epochs = 0;
   let incomeEthWei = 0n;
+  let lastRows: TokenIncome[] = [];
+  let absorption: AbsorptionState | undefined;
+  const limits = req.absorption ?? defaultAbsorptionLimits;
   let stopped: PersistentResult["stopped"] = "max-launches";
 
   /** Read the chain and fold what it says into the population. */
   const measure = async (): Promise<bigint> => {
     if (req.run.dryRun) return 0n; // nothing was launched, so nothing earned
     const rows = await collectIncome(req.dep, req.run.rpcUrl);
+    lastRows = rows;
     const agg = bySpec(rows);
     pop = applyIncome(pop, agg);
     let total = 0n;
@@ -125,6 +135,18 @@ export async function runPersistent(req: PersistentRequest): Promise<PersistentR
       stopped = "aborted";
       break;
     }
+    // Ask whether the market has taken the last batch before adding to it.
+    // A dry run has launched nothing, so there is no stock to be glutted by.
+    if (!req.run.dryRun) {
+      absorption = absorptionFrom(lastRows);
+      const verdict = mayLaunch(absorption, limits);
+      if (!verdict.ok) {
+        log(`holding: ${verdict.reason}`);
+        stopped = "glutted";
+        break;
+      }
+    }
+
     const member = nextSpec(pop, cfg);
     if (!member) {
       stopped = "exhausted";
@@ -187,5 +209,5 @@ export async function runPersistent(req: PersistentRequest): Promise<PersistentR
   // launching next time rather than what was tried this time.
   pop = { ...pop, members: reap(pop, cfg) };
   savePopulation(req.populationPath, pop);
-  return { launches, failures, epochs, incomeEthWei, population: pop, stopped, results };
+  return { launches, failures, epochs, incomeEthWei, population: pop, stopped, absorption, results };
 }

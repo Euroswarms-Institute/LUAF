@@ -152,9 +152,18 @@ buckets, dividend policy, opening buy, profile — and each launch finds its own
 npx luaf persistent --target-eth 1 --max-launches 20 --population runs/population.json
 ```
 
-The loop stops on the income target, the launch cap, or when selection has reaped everything: if no
-format earns more than a launch costs, continuing would be paying to add copies to a market that
-pays nothing for them.
+The loop stops on the income target, the launch cap, when selection has reaped everything, or when
+the market stops absorbing.
+
+That last one is its own limit. Engels on the anarchy of production: "No one knows how much of his
+particular article is coming on the market, nor how much of it will be wanted" — and then "the
+markets are glutted, products accumulate, as multitudinous as they are unsaleable", clearing only
+"more or less depreciated in value" (Anti-Dühring III.2). A coin launched and still sitting on its
+curve is that accumulation: it has tied up its gas and its opening buy and produces nothing until it
+graduates. So the loop refuses to launch when too many coins are open at once (`--max-open`,
+default 8) or when too few of its launches ever graduate (`--min-graduation`, default 0.1, ignored
+until five launches have accumulated). Stopping because the market has had enough is the one thing
+the anarchy of production cannot do.
 
 ## Configuration
 

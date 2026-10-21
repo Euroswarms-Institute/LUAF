@@ -12,6 +12,7 @@ import { resolve } from "node:path";
 
 import {
   baseSpec,
+  defaultAbsorptionLimits,
   bySpec,
   collectIncome,
   listProfiles,
@@ -45,6 +46,8 @@ const FLAG_ENV: Record<string, string> = {
   "--max-launches": "LUAF_MAX_LAUNCHES",
   "--population": "LUAF_POPULATION",
   "--aggregator": "LUAF_AGGREGATOR_URL",
+  "--max-open": "LUAF_MAX_OPEN",
+  "--min-graduation": "LUAF_MIN_GRADUATION_RATE",
 };
 
 interface Args {
@@ -151,6 +154,14 @@ LUAF_FIRST_BUY_ETH=0
 LUAF_TARGET_ETH=1
 LUAF_MAX_LAUNCHES=10
 LUAF_POPULATION=runs/population.json
+# The aggregator tells selection how crowded the chain is. Without it the loop
+# counts only our own copies and understates the competition.
+LUAF_AGGREGATOR_URL=
+# Stop adding supply when the market stops taking it: at most this many coins
+# left sitting on the curve at once, and at least this share of launches
+# reaching an open market.
+LUAF_MAX_OPEN=8
+LUAF_MIN_GRADUATION_RATE=0.1
 
 # --- the paid endpoint -----------------------------------------------------
 # Defaults to 0.01 USDC on Base, paid to the creator splitter.
@@ -273,6 +284,11 @@ async function cmdPersistent(): Promise<void> {
     maxLaunches: Number(env("LUAF_MAX_LAUNCHES", "10")),
     populationPath: env("LUAF_POPULATION", "runs/population.json"),
     aggregatorUrl: env("LUAF_AGGREGATOR_URL"),
+    absorption: {
+      ...defaultAbsorptionLimits,
+      ...(env("LUAF_MAX_OPEN") ? { maxOpen: Number(env("LUAF_MAX_OPEN")) } : {}),
+      ...(env("LUAF_MIN_GRADUATION_RATE") ? { minGraduationRate: Number(env("LUAF_MIN_GRADUATION_RATE")) } : {}),
+    },
     log: (l) => console.log(l),
   });
   console.log("\n--- done");
@@ -280,6 +296,14 @@ async function cmdPersistent(): Promise<void> {
   console.log(`launches: ${result.launches} (${result.failures} failed), ${result.epochs} epochs`);
   console.log(`income:   ${result.incomeEthWei} wei`);
   console.log(`specs:    ${result.population.members.length} alive`);
+  if (result.absorption) {
+    const a = result.absorption;
+    const rate = a.graduationRate === null ? "n/a" : `${(a.graduationRate * 100).toFixed(1)}%`;
+    console.log(`market:   ${a.open} coins still on the curve, ${a.graduated}/${a.launched} graduated (${rate})`);
+  }
+  if (result.stopped === "glutted") {
+    console.log("\nStopped because the market stopped absorbing, not because it ran out of work.");
+  }
 }
 
 async function cmdIncome(): Promise<void> {
@@ -357,7 +381,7 @@ Common flags (each sets the matching environment variable):
   --eth-usd <dollars>  --first-buy <eth>      --min-lines <n>
   --max-steps <n>      --out-dir <path>       --model <id>
   --target-eth <eth>   --max-launches <n>     --population <path>
-  --aggregator <url>
+  --aggregator <url>   --max-open <n>         --min-graduation <0..1>
   --dry-run | --no-dry-run
 
 Nothing is signed unless --no-dry-run is passed. A dry run still simulates every
