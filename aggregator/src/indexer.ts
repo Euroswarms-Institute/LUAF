@@ -101,6 +101,7 @@ export class Indexer {
           rec.name || rec.symbol
             ? { name: rec.name, symbol: rec.symbol }
             : await readTokenMeta(client, rec.address as Address);
+        const launchedAt = await this.blockTime(s.chainId, rec.block);
         this.store.upsertCoin({
           chain_id: s.chainId,
           address: rec.address,
@@ -108,14 +109,21 @@ export class Indexer {
           name: meta.name,
           symbol: meta.symbol,
           creator: rec.creator,
-          launched_at: await this.blockTime(s.chainId, rec.block),
+          launched_at: launchedAt,
           launch_block: rec.block,
+          target_raise_wei: rec.targetRaiseWei ?? null,
+          deadline: rec.deadline ?? null,
         });
         this.stats.launches++;
         this.hub?.broadcast("coin:launched", rec.address.toLowerCase(), {
           chainId: s.chainId,
           source: s.id,
           address: rec.address.toLowerCase(),
+          creator: rec.creator.toLowerCase(),
+          launchedAt,
+          graduated: false,
+          targetRaiseWei: rec.targetRaiseWei ?? null,
+          deadline: rec.deadline ?? null,
           ...meta,
         });
       }
@@ -130,12 +138,19 @@ export class Indexer {
         for (const log of grads) {
           const rec = adapter.decodeGraduation(log);
           if (!rec) continue;
-          this.store.markGraduated(s.chainId, rec.address, await this.blockTime(s.chainId, rec.block), rec.poolId);
+          const graduatedAt = await this.blockTime(s.chainId, rec.block);
+          this.store.markGraduated(s.chainId, rec.address, graduatedAt, rec.poolId, {
+            raisedWei: rec.raisedWei ?? null,
+            pairSeededWei: rec.pairSeededWei ?? null,
+          });
           this.stats.graduations++;
           this.hub?.broadcast("coin:graduated", rec.address.toLowerCase(), {
             chainId: s.chainId,
             source: s.id,
             address: rec.address.toLowerCase(),
+            graduatedAt,
+            raisedWei: rec.raisedWei ?? null,
+            pairSeededWei: rec.pairSeededWei ?? null,
           });
         }
       }

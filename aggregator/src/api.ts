@@ -129,6 +129,12 @@ export function createApi(cfg: AggregatorConfig, store: Store, indexer: Indexer)
         graduated: r.graduated === 1,
         graduatedAt: r.graduated_at,
         poolId: r.pool_id,
+        // Wei as decimal strings, all the way to the browser. Rounding money
+        // on the way out is not a presentation choice.
+        targetRaiseWei: r.target_raise_wei,
+        deadline: r.deadline,
+        raisedWei: r.raised_wei,
+        pairSeededWei: r.pair_seeded_wei,
       })),
       limit,
       offset,

@@ -370,4 +370,94 @@ describe("turnover: how fast each launchpad reaches an open market", () => {
     s.markGraduated(c.chain_id, c.address, now - 5 * DAY, null);
     expect(saturation(s, 30, now).chains[0]!.sources[0]!.medianTurnoverSecs).toBeNull();
   });
+
+describe("the money the events carry", () => {
+  it("records a target and a deadline at launch, and what it took at graduation", () => {
+    const store = makeStore(openDb(":memory:"));
+    store.upsertCoin({
+      chain_id: 4663,
+      address: "0xAaAa000000000000000000000000000000000001",
+      source_id: "doubleplus",
+      name: "Target",
+      symbol: "TGT",
+      creator: "0xBb00000000000000000000000000000000000002",
+      launched_at: 1_700_000_000,
+      launch_block: 10,
+      target_raise_wei: "4000000000000000",
+      deadline: 1_700_086_400,
+    });
+    store.markGraduated(4663, "0xaaaa000000000000000000000000000000000001", 1_700_000_900, "0xpool", {
+      raisedWei: "4100000000000000",
+      pairSeededWei: "3900000000000000",
+    });
+    const [row] = store.coins({ limit: 10, offset: 0 });
+    expect(row).toMatchObject({
+      target_raise_wei: "4000000000000000",
+      deadline: 1_700_086_400,
+      raised_wei: "4100000000000000",
+      pair_seeded_wei: "3900000000000000",
+      graduated: 1,
+    });
+  });
+
+  it("keeps wei as a string, because a wei amount does not fit a number", () => {
+    const store = makeStore(openDb(":memory:"));
+    // 10 million ETH: past Number.MAX_SAFE_INTEGER by ten orders of magnitude.
+    const huge = "10000000000000000000000000";
+    store.upsertCoin({
+      chain_id: 1,
+      address: "0xAaAa000000000000000000000000000000000003",
+      source_id: "s",
+      name: "",
+      symbol: "",
+      creator: "",
+      launched_at: 1,
+      launch_block: 1,
+      target_raise_wei: huge,
+    });
+    const [row] = store.coins({ limit: 1, offset: 0 });
+    expect(row!.target_raise_wei).toBe(huge);
+    expect(BigInt(row!.target_raise_wei!)).toBe(BigInt(huge));
+  });
+
+  it("leaves the amounts null for a launchpad whose event does not carry them", () => {
+    const store = makeStore(openDb(":memory:"));
+    store.upsertCoin({
+      chain_id: 1,
+      address: "0xAaAa000000000000000000000000000000000004",
+      source_id: "someone-else",
+      name: "",
+      symbol: "",
+      creator: "",
+      launched_at: 1,
+      launch_block: 1,
+    });
+    const [row] = store.coins({ limit: 1, offset: 0 });
+    // Null, not zero: no target is not a target of nothing.
+    expect(row!.target_raise_wei).toBeNull();
+    expect(row!.deadline).toBeNull();
+  });
+
+  it("does not wipe a recorded amount when a re-scan decodes none", () => {
+    const store = makeStore(openDb(":memory:"));
+    store.upsertCoin({
+      chain_id: 1,
+      address: "0xAaAa000000000000000000000000000000000005",
+      source_id: "s",
+      name: "",
+      symbol: "",
+      creator: "",
+      launched_at: 1,
+      launch_block: 1,
+    });
+    store.markGraduated(1, "0xaaaa000000000000000000000000000000000005", 2, null, {
+      raisedWei: "500",
+      pairSeededWei: "400",
+    });
+    store.markGraduated(1, "0xaaaa000000000000000000000000000000000005", 2, null);
+    const [row] = store.coins({ limit: 1, offset: 0 });
+    expect(row!.raised_wei).toBe("500");
+    expect(row!.pair_seeded_wei).toBe("400");
+  });
+});
 });

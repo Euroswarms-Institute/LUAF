@@ -22,6 +22,12 @@ export interface CoinRow {
   graduated: number;
   graduated_at: number | null;
   pool_id: string | null;
+  /** Wei as decimal strings: a wei amount fits neither a JS number nor a
+   *  SQLite integer. Null where the launchpad's event does not carry it. */
+  target_raise_wei: string | null;
+  deadline: number | null;
+  raised_wei: string | null;
+  pair_seeded_wei: string | null;
 }
 
 export function openDb(path: string): Database.Database {
@@ -47,20 +53,54 @@ export function openDb(path: string): Database.Database {
       graduated INTEGER NOT NULL DEFAULT 0,
       graduated_at INTEGER,
       pool_id TEXT,
+      -- The launch and graduation events carry the money; wei is kept as TEXT
+      -- because it does not fit a JS number and SQLite has no 256-bit integer.
+      target_raise_wei TEXT,
+      deadline INTEGER,
+      raised_wei TEXT,
+      pair_seeded_wei TEXT,
       PRIMARY KEY (chain_id, address)
     );
     CREATE INDEX IF NOT EXISTS coins_source_launched ON coins (source_id, launched_at DESC);
     CREATE INDEX IF NOT EXISTS coins_launched ON coins (launched_at DESC);
     CREATE INDEX IF NOT EXISTS coins_chain_launched ON coins (chain_id, launched_at DESC);
   `);
+
+  // Additive migration for databases written before these columns existed:
+  // an index built up over weeks is not worth discarding to add a column.
+  const existing = new Set(
+    (db.prepare("PRAGMA table_info(coins)").all() as { name: string }[]).map((c) => c.name),
+  );
+  for (const [col, type] of [
+    ["target_raise_wei", "TEXT"],
+    ["deadline", "INTEGER"],
+    ["raised_wei", "TEXT"],
+    ["pair_seeded_wei", "TEXT"],
+  ] as const) {
+    if (!existing.has(col)) db.exec(`ALTER TABLE coins ADD COLUMN ${col} ${type}`);
+  }
   return db;
 }
 
 export interface Store {
   cursor(sourceId: string, fallback: number): number;
   setCursor(sourceId: string, block: number): void;
-  upsertCoin(row: Omit<CoinRow, "graduated" | "graduated_at" | "pool_id">): void;
-  markGraduated(chainId: number, address: string, at: number, poolId: string | null): void;
+  /** The amounts are optional: a launchpad whose launch event does not publish
+   *  a target has no target, and a caller should not have to say so. */
+  upsertCoin(
+    row: Omit<
+      CoinRow,
+      "graduated" | "graduated_at" | "pool_id" | "raised_wei" | "pair_seeded_wei" | "target_raise_wei" | "deadline"
+    > &
+      Partial<Pick<CoinRow, "target_raise_wei" | "deadline">>,
+  ): void;
+  markGraduated(
+    chainId: number,
+    address: string,
+    at: number,
+    poolId: string | null,
+    amounts?: { raisedWei: string | null; pairSeededWei: string | null },
+  ): void;
   coins(opts: { chainId?: number; sourceId?: string; limit: number; offset: number }): CoinRow[];
   countsSince(since: number): { chain_id: number; source_id: string; launches: number; graduations: number }[];
   /** Completed turnovers in the window: how long each coin took from launch to
@@ -79,13 +119,25 @@ export function makeStore(db: Database.Database): Store {
   // A re-scan must not overwrite what is already known, so a repeated launch
   // is ignored rather than reset; graduation is applied by its own statement.
   const putCoin = db.prepare(`
-    INSERT INTO coins (chain_id, address, source_id, name, symbol, creator, launched_at, launch_block)
-    VALUES (@chain_id, @address, @source_id, @name, @symbol, @creator, @launched_at, @launch_block)
+    INSERT INTO coins
+      (chain_id, address, source_id, name, symbol, creator, launched_at, launch_block,
+       target_raise_wei, deadline)
+    VALUES
+      (@chain_id, @address, @source_id, @name, @symbol, @creator, @launched_at, @launch_block,
+       @target_raise_wei, @deadline)
     ON CONFLICT(chain_id, address) DO NOTHING
   `);
-  const putGraduated = db.prepare(
-    "UPDATE coins SET graduated = 1, graduated_at = ?, pool_id = ? WHERE chain_id = ? AND address = ?",
-  );
+  const putGraduated = db.prepare(`
+    UPDATE coins
+       SET graduated = 1,
+           graduated_at = @at,
+           pool_id = @pool_id,
+           -- COALESCE so a re-scan that decodes no amount does not wipe one
+           -- an earlier pass recorded.
+           raised_wei = COALESCE(@raised_wei, raised_wei),
+           pair_seeded_wei = COALESCE(@pair_seeded_wei, pair_seeded_wei)
+     WHERE chain_id = @chain_id AND address = @address
+  `);
 
   return {
     cursor(sourceId, fallback) {
@@ -95,10 +147,23 @@ export function makeStore(db: Database.Database): Store {
       putCursor.run(sourceId, block);
     },
     upsertCoin(row) {
-      putCoin.run({ ...row, address: row.address.toLowerCase(), creator: row.creator.toLowerCase() });
+      putCoin.run({
+        target_raise_wei: null,
+        deadline: null,
+        ...row,
+        address: row.address.toLowerCase(),
+        creator: row.creator.toLowerCase(),
+      });
     },
-    markGraduated(chainId, address, at, poolId) {
-      putGraduated.run(at, poolId, chainId, address.toLowerCase());
+    markGraduated(chainId, address, at, poolId, amounts) {
+      putGraduated.run({
+        at,
+        pool_id: poolId,
+        chain_id: chainId,
+        address: address.toLowerCase(),
+        raised_wei: amounts?.raisedWei ?? null,
+        pair_seeded_wei: amounts?.pairSeededWei ?? null,
+      });
     },
     coins({ chainId, sourceId, limit, offset }) {
       const where: string[] = [];

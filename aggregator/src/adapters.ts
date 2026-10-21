@@ -17,12 +17,21 @@ export interface LaunchRecord {
   name: string;
   symbol: string;
   block: number;
+  /** What the curve has to take before the coin reaches an open market, in wei
+   *  as a decimal string. Present when the launch event carries it. */
+  targetRaiseWei?: string;
+  /** Unix seconds by which it has to get there, if the launchpad sets one. */
+  deadline?: number;
 }
 
 export interface GraduationRecord {
   address: string;
   poolId: string | null;
   block: number;
+  /** What it actually took, in wei as a decimal string. */
+  raisedWei?: string;
+  /** What went into the pool, which is what the locked liquidity is. */
+  pairSeededWei?: string;
 }
 
 export interface Adapter {
@@ -54,6 +63,23 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
 }
 
+/** A uint from an event, as a decimal string. Undefined rather than "0" when
+ *  absent: a coin whose launchpad does not publish a target has no target, and
+ *  that is not the same as a target of nothing. */
+function uint(v: unknown): string | undefined {
+  if (typeof v === "bigint") return v.toString();
+  if (typeof v === "number" && Number.isFinite(v)) return String(Math.trunc(v));
+  if (typeof v === "string" && /^\d+$/.test(v)) return v;
+  return undefined;
+}
+
+function secs(v: unknown): number | undefined {
+  const n = uint(v);
+  if (n === undefined) return undefined;
+  const asNumber = Number(n);
+  return Number.isSafeInteger(asNumber) && asNumber > 0 ? asNumber : undefined;
+}
+
 export function ventureAdapter(): Adapter {
   const launchEvent = abiEvent("Launched");
   const graduateEvent = abiEvent("Graduated");
@@ -71,13 +97,21 @@ export function ventureAdapter(): Adapter {
         name: "",
         symbol: "",
         block: Number(log.blockNumber ?? 0n),
+        targetRaiseWei: uint(args?.targetRaiseWei),
+        deadline: secs(args?.deadline),
       };
     },
     decodeGraduation(log) {
       const args = (log as Decoded).args;
       const token = args?.token;
       if (typeof token !== "string") return undefined;
-      return { address: token, poolId: str(args?.poolId) || null, block: Number(log.blockNumber ?? 0n) };
+      return {
+        address: token,
+        poolId: str(args?.poolId) || null,
+        block: Number(log.blockNumber ?? 0n),
+        raisedWei: uint(args?.raisedWei),
+        pairSeededWei: uint(args?.pairSeeded),
+      };
     },
   };
 }
@@ -121,14 +155,22 @@ export function genericAdapter(s: SourceConfig): Adapter {
         name: map.name ? str(args?.[map.name]) : "",
         symbol: map.symbol ? str(args?.[map.symbol]) : "",
         block: Number(log.blockNumber ?? 0n),
+        targetRaiseWei: map.targetRaise ? uint(args?.[map.targetRaise]) : undefined,
+        deadline: map.deadline ? secs(args?.[map.deadline]) : undefined,
       };
     },
     decodeGraduation(log) {
       const key = s.graduateMap?.token;
       if (!key) return undefined;
-      const token = (log as Decoded).args?.[key];
+      const args = (log as Decoded).args;
+      const token = args?.[key];
       if (typeof token !== "string") return undefined;
-      return { address: token, poolId: null, block: Number(log.blockNumber ?? 0n) };
+      return {
+        address: token,
+        poolId: null,
+        block: Number(log.blockNumber ?? 0n),
+        raisedWei: s.graduateMap?.raised ? uint(args?.[s.graduateMap.raised]) : undefined,
+      };
     },
   };
 }

@@ -7,28 +7,25 @@
 <title>Lucreocracy</title>
 <style>
   :root {
-    /* Chrome: brass and ochre. */
     --frame: #6b5222;
-    --frame-lo: #43330f;
     --title-a: #b08c3c;
     --title-b: #85682a;
     --title-c: #5d4818;
     --face: #ded3b0;
     --face-lo: #c9bd96;
     --face-hi: #f3ecd2;
+    --pane: #e7dcba;
     --ink: #2a2318;
     --ink-soft: #5d5134;
     --bevel-hi: #fffbe9;
     --bevel-lo: #8a7c53;
     --bevel-dk: #5f5533;
-    /* Screens: amber on charcoal. */
     --screen: #15140f;
-    --screen-lo: #0e0d0a;
+    --screen-hi: #1d1b13;
     --screen-rule: #35301f;
     --glow: #ffc14d;
     --glow-dim: #a8821f;
     --read: #e7dcbd;
-    --read-soft: #9c9177;
     --go: #8fd67a;
     --wait: #6fb6e8;
     --warn: #ffd166;
@@ -37,177 +34,136 @@
     --mono: "Lucida Console", ui-monospace, Consolas, Menlo, monospace;
   }
   * { box-sizing: border-box; }
-  html { background: #15150f; }
+  html { height: 100%; background: #15150f; }
+  /* Maximized: an XP window that fills the screen keeps no frame and no
+     rounded corners, and neither does this. A document floating in the middle
+     of a desktop is a PDF viewer, not a launchpad. */
   body {
-    margin: 0;
-    padding: 18px 16px 10px;
-    font: 11px/1.45 var(--ui);
-    color: var(--ink);
-    background:
-      radial-gradient(1200px 520px at 50% -140px, #3a3828 0%, #1d1c14 60%, #121109 100%);
-    min-height: 100vh;
-  }
-
-  /* ---- the window ---------------------------------------------------- */
-  .win {
-    max-width: 1180px;
-    margin: 0 auto;
-    background: var(--frame);
-    border-radius: 8px 8px 3px 3px;
-    padding: 3px;
-    box-shadow: 0 1px 0 #8f7334 inset, 0 10px 34px rgba(0, 0, 0, 0.55);
+    margin: 0; height: 100%; overflow: hidden;
+    display: flex; flex-direction: column;
+    font: 11px/1.45 var(--ui); color: var(--ink); background: var(--frame);
   }
   .title {
-    height: 27px;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 6px 0 5px;
-    border-radius: 6px 6px 0 0;
+    height: 27px; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 9px;
     background: linear-gradient(180deg, var(--title-a) 0%, var(--title-b) 48%, var(--title-c) 52%, #4b3912 100%);
     box-shadow: 0 1px 0 rgba(255, 240, 200, 0.45) inset;
   }
-  .title h1 {
-    margin: 0;
-    font: bold 12px/1 var(--ui);
-    color: #fff8e4;
-    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.6);
-    letter-spacing: 0.01em;
-  }
+  .title h1 { margin: 0; font: bold 12px/1 var(--ui); color: #fff8e4; text-shadow: 1px 1px 1px rgba(0,0,0,.6); }
   .title .fill { flex: 1; }
   .title .meta { font-size: 10px; color: #f0e2bd; text-shadow: 1px 1px 1px rgba(0,0,0,.5); }
-  .emblem { width: 16px; height: 16px; display: block; flex: none; }
-
-  .body { background: var(--face); border-radius: 0 0 2px 2px; padding: 7px 8px 8px; }
+  .emblem { width: 16px; height: 16px; flex: none; }
 
   /* ---- toolbar ------------------------------------------------------- */
   .tools {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 4px 4px 7px;
+    flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 5px 9px; background: var(--face);
+    border-top: 1px solid #8f7334; border-bottom: 1px solid var(--bevel-lo);
   }
   .tools .fill { flex: 1; }
   label.f { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-soft); }
 
   button {
-    font: 11px var(--ui);
-    color: var(--ink);
-    padding: 3px 11px;
-    border: 1px solid;
-    border-color: var(--bevel-hi) var(--bevel-dk) var(--bevel-dk) var(--bevel-hi);
-    border-radius: 3px;
-    background: linear-gradient(180deg, #f6efd6 0%, #e2d7b3 50%, #d3c79f 100%);
+    font: 11px var(--ui); color: var(--ink); padding: 3px 11px;
+    border: 1px solid; border-color: var(--bevel-hi) var(--bevel-dk) var(--bevel-dk) var(--bevel-hi);
+    border-radius: 3px; background: linear-gradient(180deg, #f6efd6 0%, #e2d7b3 50%, #d3c79f 100%);
     cursor: pointer;
   }
   button:hover:not(:disabled) { background: linear-gradient(180deg, #fff9e4 0%, #eee2bd 50%, #ddd0a6 100%); }
-  button:active:not(:disabled) {
+  button:active:not(:disabled), button[aria-pressed="true"] {
     border-color: var(--bevel-dk) var(--bevel-hi) var(--bevel-hi) var(--bevel-dk);
     background: #cfc298;
   }
-  button:disabled { color: #9a9070; text-shadow: 1px 1px 0 var(--face-hi); cursor: default; }
   button:focus-visible { outline: 1px dotted var(--ink); outline-offset: -4px; }
-
   select, input {
-    font: 11px var(--ui);
-    color: var(--ink);
-    background: #fffdf2;
-    padding: 2px 4px;
-    border: 1px solid;
-    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
-    border-radius: 0;
-    max-width: 100%;
+    font: 11px var(--ui); color: var(--ink); background: #fffdf2; padding: 2px 4px;
+    border: 1px solid; border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    border-radius: 0; max-width: 100%;
   }
-  select { max-width: 22ch; }
+  select { max-width: 20ch; }
   input { width: 15ch; }
   select:focus, input:focus { outline: 1px solid #8a6b2f; }
 
-  /* ---- tabs ---------------------------------------------------------- */
-  .tabs { display: flex; gap: 2px; padding: 0 4px; position: relative; z-index: 2; }
-  .tab {
-    font: 11px var(--ui);
-    padding: 4px 14px 5px;
-    color: var(--ink-soft);
-    background: linear-gradient(180deg, #ded2ad 0%, #cabd94 100%);
-    border: 1px solid var(--bevel-lo);
-    border-bottom: 0;
-    border-radius: 4px 4px 0 0;
-    cursor: pointer;
-    position: relative;
-    top: 1px;
-  }
-  .tab[aria-selected="true"] {
-    color: var(--ink);
-    font-weight: bold;
-    background: linear-gradient(180deg, #fdf7e2 0%, #ece0bd 100%);
-    top: 0;
-    padding-bottom: 7px;
-  }
+  /* ---- the split: task pane and content ------------------------------ */
+  .split { flex: 1; min-height: 0; display: flex; background: var(--face); }
   .pane {
-    border: 1px solid var(--bevel-lo);
-    background: var(--face-hi);
-    padding: 8px;
+    flex: none; width: 212px; overflow-y: auto; padding: 9px 9px 14px;
+    background: linear-gradient(180deg, var(--pane) 0%, #dacf ad 100%);
+    background: linear-gradient(180deg, var(--pane) 0%, #d8cdab 100%);
+    border-right: 1px solid var(--bevel-lo);
   }
-  .pane[hidden] { display: none; }
-
-  /* ---- group boxes --------------------------------------------------- */
-  fieldset {
-    border: 1px solid var(--bevel-lo);
-    border-radius: 3px;
-    margin: 0 0 8px;
-    padding: 9px 10px 10px;
-    background: linear-gradient(180deg, #faf4df, #efe7cb);
+  .pane h2 {
+    margin: 0 0 1px; font: bold 11px/1 var(--ui); color: #fff6dc; padding: 5px 8px;
+    background: linear-gradient(180deg, #9d7c33, #7a5f22);
+    border: 1px solid var(--bevel-dk);
   }
-  legend { padding: 0 5px; font-weight: bold; color: #5a4718; font-size: 11px; }
+  .pane .group { margin-bottom: 12px; }
+  .pane .items { border: 1px solid var(--bevel-lo); border-top: 0; background: #efe6c6; padding: 5px 0; }
+  .pane .items a, .pane .items button.link {
+    display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 0;
+    padding: 3px 9px; font: 11px var(--ui); color: #43351a; text-decoration: none; cursor: pointer;
+  }
+  .pane .items a:hover, .pane .items button.link:hover { color: #000; background: #dfd2a8; }
+  .pane .items button.link[aria-pressed="true"] { font-weight: bold; background: #d6c79b; }
+  .pane .items button.link .ct { float: right; color: #7d6c42; font-weight: normal; }
+  .pane dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 9px; }
+  .pane dt { color: #6a5a30; }
+  .pane dd { margin: 0; font-family: var(--mono); color: #3c2f14; }
 
-  /* ---- readouts: the numbers row ------------------------------------- */
-  .figs { display: flex; flex-wrap: wrap; gap: 8px; }
-  .fig {
-    flex: 1 1 128px;
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 9px; }
+
+  /* ---- tiles: the launchpad grid -------------------------------------- */
+  .tiles {
+    flex: 1; min-height: 0; overflow-y: auto;
+    border: 1px solid; border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
     background: var(--screen);
-    border: 1px solid;
-    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
-    padding: 6px 9px 7px;
+    padding: 9px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(234px, 1fr)); gap: 8px;
+    align-content: start;
   }
-  .fig .v {
-    display: block;
-    font: 17px/1.1 var(--mono);
-    font-variant-numeric: tabular-nums;
-    color: var(--glow);
-    text-shadow: 0 0 9px rgba(255, 193, 77, 0.3);
+  .tile {
+    border: 1px solid var(--screen-rule); background: var(--screen-hi);
+    padding: 8px 9px 9px; display: flex; flex-direction: column; gap: 6px; min-width: 0;
   }
-  .fig .v.go { color: var(--go); text-shadow: 0 0 9px rgba(143, 214, 122, 0.28); }
-  .fig .v.stop { color: var(--stop); text-shadow: 0 0 9px rgba(232, 112, 90, 0.3); }
-  .fig .k { display: block; margin-top: 3px; font-size: 10px; color: var(--glow-dim); }
+  .tile:hover { border-color: #6a5a25; background: #241f14; }
+  .tile .top { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .av {
+    width: 32px; height: 32px; flex: none; display: grid; place-items: center;
+    font: bold 12px/1 var(--mono); color: #1a1509; border: 1px solid rgba(0,0,0,.4);
+  }
+  .tile .names { min-width: 0; flex: 1; }
+  .tile .tk { font: bold 13px/1.2 var(--ui); color: #fff1cf; display: block; overflow: hidden; text-overflow: ellipsis; }
+  .tile .nm { font-size: 10px; color: #9b8f6f; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .badge { font-size: 10px; padding: 1px 6px; border: 1px solid; flex: none; }
+  .badge.go { color: var(--go); border-color: #3d6a33; background: #1b2a17; }
+  .badge.wait { color: var(--wait); border-color: #2d5572; background: #141f28; }
+  .badge.stop { color: var(--stop); border-color: #70342a; background: #291613; }
+  .tile .nums { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--glow-dim); }
+  .tile .nums b { display: block; font: 12px/1.3 var(--mono); font-variant-numeric: tabular-nums; color: var(--glow); font-weight: normal; }
+  .tile .nums .r { text-align: right; }
+  .bar { height: 6px; background: #0b0a07; border: 1px solid #332d1d; position: relative; overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(180deg, #ffd470, #c8901c); }
+  .bar.full i { background: linear-gradient(180deg, #a9ea96, #5fa94c); }
+  .bar.late i { background: linear-gradient(180deg, #f09a86, #c2503a); }
+  .tile .foot { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: #8d8471; }
+  .tile .foot .ad { font-family: var(--mono); }
 
-  /* ---- list view: a sunken screen ------------------------------------ */
+  /* ---- details: the table -------------------------------------------- */
   .list {
-    border: 1px solid;
-    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    flex: 1; min-height: 0; overflow: auto;
+    border: 1px solid; border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
     background: var(--screen);
-    overflow-x: auto;
   }
   table { width: 100%; border-collapse: collapse; }
   thead th {
-    position: sticky;
-    top: 0;
-    text-align: left;
-    font: bold 10px/1 var(--ui);
-    color: var(--ink);
-    padding: 5px 12px 5px 7px;
-    white-space: nowrap;
+    position: sticky; top: 0; text-align: left; font: bold 10px/1 var(--ui); color: var(--ink);
+    padding: 5px 12px 5px 7px; white-space: nowrap;
     background: linear-gradient(180deg, #ece0bd 0%, #d6c99f 100%);
-    border-right: 1px solid var(--bevel-lo);
-    border-bottom: 1px solid var(--bevel-dk);
+    border-right: 1px solid var(--bevel-lo); border-bottom: 1px solid var(--bevel-dk);
   }
   thead th:last-child { border-right: 0; }
   thead th.n { text-align: right; }
   tbody td {
-    padding: 4px 12px 4px 7px;
-    font-size: 11px;
-    color: var(--read);
-    white-space: nowrap;
+    padding: 4px 12px 4px 7px; color: var(--read); white-space: nowrap;
     border-bottom: 1px solid var(--screen-rule);
   }
   tbody tr:nth-child(even) td { background: #1a1812; }
@@ -220,143 +176,136 @@
   .is-go { color: var(--go) !important; }
   .is-wait { color: var(--wait) !important; }
   .is-warn { color: var(--warn) !important; }
+  .is-stop { color: var(--stop) !important; }
+  .view[hidden] { display: none; }
 
   /* ---- status bar ---------------------------------------------------- */
-  .status { display: flex; gap: 3px; margin-top: 7px; }
+  .status { flex: none; display: flex; gap: 3px; padding: 6px 9px 7px; background: var(--face); }
   .status span {
-    border: 1px solid;
-    border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
-    background: var(--face-lo);
-    padding: 2px 8px;
-    font-size: 10px;
-    color: var(--ink);
-    white-space: nowrap;
+    border: 1px solid; border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+    background: var(--face-lo); padding: 2px 8px; font-size: 10px; white-space: nowrap;
   }
-  .status span.grow { flex: 1; }
+  .status span.wide { flex: 1; }
+  .status a { color: #4a3c15; text-decoration: none; }
+  .status a:hover { text-decoration: underline; }
+  .status .sep { color: #9a8f6a; margin: 0 5px; }
   .led { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #7a7257; margin-right: 5px; vertical-align: -1px; }
   .led.go { background: var(--go); box-shadow: 0 0 5px var(--go); }
   .led.wait { background: var(--warn); box-shadow: 0 0 5px var(--warn); }
   .led.stop { background: var(--stop); box-shadow: 0 0 5px var(--stop); }
 
-  .msg { font-size: 10px; color: #6a5c30; margin: 7px 2px 0; }
+  .msg { font-size: 10px; color: #6a5c30; margin: 7px 2px 0; flex: none; }
   .msg.warn { color: #8a5a07; }
   .msg.bad { color: #9b2f1c; }
 
-  /* ---- footer -------------------------------------------------------- */
-  .foot { max-width: 1180px; margin: 10px auto 0; padding: 0 4px; }
-  .foot p { margin: 0; font-size: 10px; color: #8d866b; }
-  .foot a { color: #c2a95f; text-decoration: none; }
-  .foot a:hover { text-decoration: underline; }
-  .foot .sep { color: #5f5a46; margin: 0 6px; }
+  .tile.fresh, tr.fresh td { animation: in 1.4s ease-out; }
+  @keyframes in { from { background: #4a3a12; } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .tile.fresh, tr.fresh td { animation: none; } }
 
-  tr.fresh td { animation: in 1.3s ease-out; }
-  @keyframes in { from { background: #4a3a12; color: #fff6dc; } to { background: transparent; } }
-  @media (prefers-reduced-motion: reduce) { tr.fresh td { animation: none; } }
-  @media (max-width: 680px) {
-    body { padding: 10px 8px 8px; }
-    .fig { flex: 1 1 44%; }
-    .title h1 { font-size: 11px; }
+  @media (max-width: 760px) {
+    .pane { display: none; }
+    .content { padding: 7px; }
+    .tiles { grid-template-columns: repeat(auto-fill, minmax(100%, 1fr)); }
+    .status { flex-wrap: wrap; }
+    /* The link strip is the one status segment that must be allowed to wrap:
+       four links do not fit a phone on one line, and nowrap pushed the page
+       sideways. */
+    .status span.wide { flex: 1 1 100%; order: 9; white-space: normal; line-height: 1.7; }
   }
 </style>
 </head>
 <body>
-<div class="win">
-  <div class="title">
-    <svg class="emblem" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="7" fill="#20190a" stroke="#d8b866" stroke-width="1"/>
-      <circle cx="8" cy="8" r="2.6" fill="none" stroke="#d8b866" stroke-width="1.6"/>
-      <path d="M8 1.2v2.4M8 12.4v2.4M1.2 8h2.4M12.4 8h2.4" stroke="#d8b866" stroke-width="1.4"/>
-    </svg>
-    <h1>Lucreocracy</h1>
-    <span class="fill"></span>
-    <span class="meta" id="title-meta"></span>
-  </div>
+<div class="title">
+  <svg class="emblem" viewBox="0 0 16 16" aria-hidden="true">
+    <circle cx="8" cy="8" r="7" fill="#20190a" stroke="#d8b866" stroke-width="1"/>
+    <circle cx="8" cy="8" r="2.6" fill="none" stroke="#d8b866" stroke-width="1.6"/>
+    <path d="M8 1.2v2.4M8 12.4v2.4M1.2 8h2.4M12.4 8h2.4" stroke="#d8b866" stroke-width="1.4"/>
+  </svg>
+  <h1>Lucreocracy</h1>
+  <span class="fill"></span>
+  <span class="meta" id="title-meta"></span>
+</div>
 
-  <div class="body">
-    <div class="tools">
-      <label class="f">Chain
-        <select id="chain" aria-label="Chain"><option value="">All</option></select>
-      </label>
-      <label class="f">Launchpad
-        <select id="source" aria-label="Launchpad"><option value="">All</option></select>
-      </label>
-      <label class="f">Rows
-        <select id="limit" aria-label="Rows">
-          <option value="50">50</option><option value="100" selected>100</option>
-          <option value="250">250</option><option value="500">500</option>
-        </select>
-      </label>
-      <label class="f">Find
-        <input id="q" placeholder="name or address" autocomplete="off" spellcheck="false" aria-label="Find">
-      </label>
-      <span class="fill"></span>
-      <button id="reload">Refresh</button>
-    </div>
+<div class="tools">
+  <button id="v-tiles" aria-pressed="true">Tiles</button>
+  <button id="v-details" aria-pressed="false">Details</button>
+  <span style="width:8px"></span>
+  <label class="f">Chain <select id="chain" aria-label="Chain"><option value="">All</option></select></label>
+  <label class="f">Launchpad <select id="source" aria-label="Launchpad"><option value="">All</option></select></label>
+  <label class="f">Rows <select id="limit" aria-label="Rows">
+    <option value="50">50</option><option value="100" selected>100</option>
+    <option value="250">250</option><option value="500">500</option>
+  </select></label>
+  <label class="f">Find <input id="q" placeholder="name or address" autocomplete="off" spellcheck="false" aria-label="Find"></label>
+  <span class="fill"></span>
+  <button id="reload">Refresh</button>
+</div>
 
-    <fieldset>
-      <legend>Totals</legend>
-      <div class="figs">
-        <div class="fig"><span class="v" id="f-coins">—</span><span class="k">Coins indexed</span></div>
-        <div class="fig"><span class="v go" id="f-trading">—</span><span class="k">Trading</span></div>
-        <div class="fig"><span class="v" id="f-pads">—</span><span class="k">Launchpads</span></div>
-        <div class="fig"><span class="v" id="f-chains">—</span><span class="k">Chains</span></div>
+<div class="split">
+  <div class="pane">
+    <div class="group">
+      <h2>Show</h2>
+      <div class="items" id="filters">
+        <button class="link" data-filter="all" aria-pressed="true">All <span class="ct" id="ct-all"></span></button>
+        <button class="link" data-filter="filling" aria-pressed="false">Filling <span class="ct" id="ct-filling"></span></button>
+        <button class="link" data-filter="trading" aria-pressed="false">Trading <span class="ct" id="ct-trading"></span></button>
+        <button class="link" data-filter="expired" aria-pressed="false">Past deadline <span class="ct" id="ct-expired"></span></button>
       </div>
-    </fieldset>
-
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" id="tab-coins" aria-controls="pane-coins" aria-selected="true">Coins</button>
-      <button class="tab" role="tab" id="tab-density" aria-controls="pane-density" aria-selected="false">Chain activity</button>
     </div>
-
-    <div class="pane" id="pane-coins" role="tabpanel" aria-labelledby="tab-coins">
-      <div class="list"><table>
-        <thead><tr>
-          <th>Coin</th><th>Launchpad</th><th>Chain</th><th>Status</th>
-          <th class="n">Launched</th><th class="n">To market</th><th>Address</th>
-        </tr></thead>
-        <tbody id="coins"></tbody>
-      </table></div>
-      <p class="msg" id="coins-note"></p>
+    <div class="group">
+      <h2>Totals</h2>
+      <dl>
+        <dt>Coins</dt><dd id="t-coins">—</dd>
+        <dt>Trading</dt><dd id="t-trading">—</dd>
+        <dt>Launchpads</dt><dd id="t-pads">—</dd>
+        <dt>Chains</dt><dd id="t-chains">—</dd>
+        <dt>Raised</dt><dd id="t-raised">—</dd>
+      </dl>
     </div>
-
-    <div class="pane" id="pane-density" role="tabpanel" aria-labelledby="tab-density" hidden>
-      <div class="tools" style="padding-top:0">
-        <label class="f">Period
-          <select id="window" aria-label="Period">
+    <div class="group">
+      <h2>Chain activity</h2>
+      <div class="items">
+        <div style="padding:6px 9px">
+          <label class="f" style="display:block;margin-bottom:5px">Period</label>
+          <select id="window" aria-label="Period" style="width:100%;max-width:100%">
             <option value="1">Last day</option>
             <option value="7" selected>Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
             <option value="365">Last year</option>
           </select>
-        </label>
+        </div>
+        <dl id="activity"></dl>
       </div>
-      <div class="list"><table>
-        <thead><tr>
-          <th>Chain</th><th class="n">Launched</th><th class="n">Trading</th><th class="n">Reached market</th>
-          <th class="n">Median time</th><th class="n">Turnovers / yr</th><th class="n">Under 10 min</th>
-        </tr></thead>
-        <tbody id="sat"></tbody>
-      </table></div>
-      <p class="msg" id="sat-note"></p>
+      <p class="msg" id="sat-note" style="margin:6px 2px 0"></p>
     </div>
+  </div>
 
-    <div class="status">
-      <span id="st-feed"><i class="led" id="led"></i><span id="feed-text">Connecting</span></span>
-      <span class="grow" id="st-count"></span>
-      <span id="st-time"></span>
-    </div>
+  <div class="content">
+    <div class="tiles view" id="tiles"></div>
+    <div class="list view" id="details" hidden><table>
+      <thead><tr>
+        <th>Coin</th><th>Launchpad</th><th>Chain</th><th>Status</th>
+        <th class="n">Target</th><th class="n">Raised</th>
+        <th class="n">Launched</th><th class="n">To market</th><th>Address</th>
+      </tr></thead>
+      <tbody id="coins"></tbody>
+    </table></div>
+    <p class="msg" id="coins-note"></p>
   </div>
 </div>
 
-<div class="foot">
-  <p>
-    &copy; <span id="year">2026</span> Lucreocracy
-    <span class="sep">|</span><a href="/legal/terms-of-service.html">Terms of Service</a>
-    <span class="sep">|</span><a href="/legal/terms-of-use.html">Terms of Use</a>
-    <span class="sep">|</span><a href="/legal/terms-of-purchase.html">Terms of Purchase</a>
-    <span class="sep">|</span><a href="/legal/privacy-policy.html">Privacy Policy</a>
-  </p>
+<div class="status">
+  <span><i class="led" id="led"></i><span id="feed-text">Connecting</span></span>
+  <span id="st-count"></span>
+  <span class="wide">
+    <a href="/legal/terms-of-service.html">Terms of Service</a><span class="sep">|</span>
+    <a href="/legal/terms-of-use.html">Terms of Use</a><span class="sep">|</span>
+    <a href="/legal/terms-of-purchase.html">Terms of Purchase</a><span class="sep">|</span>
+    <a href="/legal/privacy-policy.html">Privacy Policy</a>
+  </span>
+  <span>&copy; <span id="year">2026</span> Lucreocracy</span>
+  <span id="st-time"></span>
 </div>
 
 <script>
@@ -365,25 +314,59 @@ const $ = (id) => document.getElementById(id);
 let sources = [];
 let chains = [];
 let coins = [];
+let filter = "all";
+let view = "tiles";
 
 const int = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US"));
 const pct = (r) => (r === null || r === undefined ? "—" : Math.round(r * 100) + "%");
+const now = () => Math.floor(Date.now() / 1000);
+
+/** Wei to ETH. Divided as a BigInt and then formatted, so a figure never goes
+ *  through a float on its way to the screen. */
+function eth(wei, digits) {
+  if (wei === null || wei === undefined) return null;
+  let v;
+  try { v = BigInt(wei); } catch (e) { return null; }
+  const d = digits === undefined ? 4 : digits;
+  const scale = 10n ** 18n;
+  const whole = v / scale;
+  const frac = (v % scale).toString().padStart(18, "0").slice(0, d).replace(/0+$/, "");
+  return frac ? whole.toString() + "." + frac : whole.toString();
+}
 
 function dur(secs) {
   if (secs === null || secs === undefined) return "—";
-  const s = Number(secs);
-  if (s < 90) return s + "s";
+  const s = Math.abs(Number(secs));
+  if (s < 90) return Math.round(s) + "s";
   if (s < 5400) return Math.round(s / 60) + "m";
   if (s < 172800) return Math.round(s / 3600) + "h";
   return Math.round(s / 86400) + "d";
 }
-function ago(ts) {
-  if (!ts) return "—";
-  return dur(Math.max(0, Math.floor(Date.now() / 1000) - Number(ts)));
-}
+const ago = (ts) => (ts ? dur(now() - Number(ts)) : "—");
 const short = (a) => (a && a.length > 12 ? a.slice(0, 6) + "…" + a.slice(-4) : a || "");
 const chainLabel = (id) => (chains.find((c) => c.chainId === id) || {}).label || String(id);
 const sourceLabel = (id) => (sources.find((s) => s.id === id) || {}).label || id;
+
+/** Filling, Trading, or past its deadline without getting there. */
+function phase(c) {
+  if (c.graduated) return "trading";
+  if (c.deadline && Number(c.deadline) < now()) return "expired";
+  return "filling";
+}
+
+/** A tile needs a mark, and the launchpads do not give us one. Derived from
+ *  the address so it is stable, and plainly generated rather than pretending
+ *  to be a logo somebody chose. */
+function avatar(c) {
+  const a = (c.address || "").toLowerCase();
+  let h = 0;
+  for (let i = 2; i < a.length; i++) h = (h * 31 + a.charCodeAt(i)) % 360;
+  const el = document.createElement("div");
+  el.className = "av";
+  el.style.background = "linear-gradient(135deg, hsl(" + h + " 52% 62%), hsl(" + ((h + 38) % 360) + " 46% 42%))";
+  el.textContent = (c.symbol || "?").slice(0, 2).toUpperCase();
+  return el;
+}
 
 async function get(path) {
   const r = await fetch(path);
@@ -397,58 +380,120 @@ function msg(el, text, kind) {
 function cell(text, cls) {
   const td = document.createElement("td");
   if (cls) td.className = cls;
-  td.textContent = text;
+  td.textContent = text === null || text === undefined ? "—" : text;
   return td;
 }
 function clock() {
   $("st-time").textContent = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-// ---- tabs ---------------------------------------------------------------
-for (const [tab, pane] of [["tab-coins", "pane-coins"], ["tab-density", "pane-density"]]) {
-  $(tab).onclick = () => {
-    for (const [t, p] of [["tab-coins", "pane-coins"], ["tab-density", "pane-density"]]) {
-      const on = t === tab;
-      $(t).setAttribute("aria-selected", String(on));
-      $(p).hidden = !on;
-    }
-    if (pane === "pane-density") loadSaturation();
-  };
-}
+// ---- tiles --------------------------------------------------------------
 
-// ---- chain activity -----------------------------------------------------
-async function loadSaturation() {
-  const body = $("sat");
-  try {
-    const s = await get("/api/saturation?windowDays=" + encodeURIComponent($("window").value));
-    body.textContent = "";
-    if (!s.chains.length) {
-      msg($("sat-note"), "Nothing launched in this period.");
-      return;
-    }
-    for (const c of s.chains) {
-      const tr = document.createElement("tr");
-      tr.append(
-        cell(chainLabel(c.chainId), "soft"),
-        cell(int(c.launches), "n"),
-        cell(int(c.graduations), "n"),
-        cell(pct(c.graduationRate), "n"),
-        cell(dur(c.medianTurnoverSecs), "n"),
-        cell(int(c.turnoversPerYear), "n"),
-        cell(int(c.fastGraduations), c.fastGraduations > 0 ? "n is-warn" : "n"),
-      );
-      body.append(tr);
-    }
-    const fast = s.chains.filter((c) => c.fastGraduations > 0).reduce((a, c) => a + c.fastGraduations, 0);
-    msg($("sat-note"), fast ? fast + " reached a market in under ten minutes." : "", fast ? "warn" : "");
-  } catch (e) {
-    body.textContent = "";
-    msg($("sat-note"), e.message, "bad");
+function tile(c) {
+  const p = phase(c);
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.dataset.address = (c.address || "").toLowerCase();
+
+  const top = document.createElement("div");
+  top.className = "top";
+  const names = document.createElement("div");
+  names.className = "names";
+  const tk = document.createElement("span");
+  tk.className = "tk";
+  tk.textContent = c.symbol || "—";
+  const nm = document.createElement("span");
+  nm.className = "nm";
+  nm.textContent = c.name && c.name !== c.symbol ? c.name : sourceLabel(c.source);
+  names.append(tk, nm);
+  const badge = document.createElement("span");
+  badge.className = "badge " + (p === "trading" ? "go" : p === "expired" ? "stop" : "wait");
+  badge.textContent = p === "trading" ? "Trading" : p === "expired" ? "Past deadline" : "Filling";
+  top.append(avatar(c), names, badge);
+
+  const nums = document.createElement("div");
+  nums.className = "nums";
+  const left = document.createElement("div");
+  const right = document.createElement("div");
+  right.className = "r";
+  const target = eth(c.targetRaiseWei);
+  const raised = eth(c.raisedWei);
+  left.innerHTML = "";
+  const lb = document.createElement("b");
+  const lk = document.createElement("span");
+  const rb = document.createElement("b");
+  const rk = document.createElement("span");
+  if (p === "trading") {
+    lb.textContent = raised === null ? "—" : raised + " ETH";
+    lk.textContent = "Raised";
+    rb.textContent = c.graduatedAt && c.launchedAt ? dur(c.graduatedAt - c.launchedAt) : "—";
+    rk.textContent = "To market";
+  } else {
+    lb.textContent = target === null ? "—" : target + " ETH";
+    lk.textContent = "Target";
+    rb.textContent = c.deadline ? dur(Number(c.deadline) - now()) : "—";
+    rk.textContent = p === "expired" ? "Overdue" : "Left";
   }
+  left.append(lb, lk);
+  right.append(rb, rk);
+  nums.append(left, right);
+
+  el.append(top, nums);
+
+  // A bar, and only where there is something real to put in it. For a coin
+  // that reached a market it is what it took against what it needed; for one
+  // still filling it is the clock, which is the only progress the launch
+  // events actually publish. Current raise would need the indexer to read
+  // curve state, so no bar pretends to show it.
+  if (p === "trading" && c.raisedWei && c.targetRaiseWei) {
+    let share = 0;
+    try {
+      const t = BigInt(c.targetRaiseWei);
+      if (t > 0n) share = Number((BigInt(c.raisedWei) * 1000n) / t) / 1000;
+    } catch (e) { /* leave it at zero */ }
+    el.append(bar(Math.min(1, share), "full"), legend(pct(share) + " of target"));
+  } else if (c.deadline && c.launchedAt) {
+    const span = Number(c.deadline) - Number(c.launchedAt);
+    const gone = now() - Number(c.launchedAt);
+    const share = span > 0 ? Math.max(0, Math.min(1, gone / span)) : 1;
+    el.append(bar(share, p === "expired" ? "late" : ""), legend(p === "expired" ? "deadline passed" : "of its window gone"));
+  }
+
+  const foot = document.createElement("div");
+  foot.className = "foot";
+  const when = document.createElement("span");
+  when.textContent = ago(c.launchedAt) + " ago";
+  const ad = document.createElement("span");
+  ad.className = "ad";
+  ad.textContent = short(c.address);
+  ad.title = c.address || "";
+  foot.append(when, ad);
+  el.append(foot);
+  return el;
 }
 
-// ---- coins --------------------------------------------------------------
+function bar(share, cls) {
+  const b = document.createElement("div");
+  b.className = "bar" + (cls ? " " + cls : "");
+  const i = document.createElement("i");
+  i.style.width = Math.round(share * 100) + "%";
+  b.append(i);
+  return b;
+}
+function legend(text) {
+  const p = document.createElement("div");
+  p.className = "foot";
+  p.style.marginTop = "-2px";
+  const s = document.createElement("span");
+  s.textContent = text;
+  p.append(s);
+  return p;
+}
+
+// ---- details ------------------------------------------------------------
+
 function coinRow(c) {
+  const p = phase(c);
   const tr = document.createElement("tr");
   tr.dataset.address = (c.address || "").toLowerCase();
   const sym = document.createElement("td");
@@ -465,7 +510,10 @@ function coinRow(c) {
     sym,
     cell(sourceLabel(c.source), "soft"),
     cell(chainLabel(c.chainId), "soft"),
-    cell(c.graduated ? "Trading" : "Filling", c.graduated ? "is-go" : "is-wait"),
+    cell(p === "trading" ? "Trading" : p === "expired" ? "Past deadline" : "Filling",
+      p === "trading" ? "is-go" : p === "expired" ? "is-stop" : "is-wait"),
+    cell(eth(c.targetRaiseWei), "n"),
+    cell(eth(c.raisedWei), "n"),
     cell(ago(c.launchedAt), "n"),
     cell(c.graduated && c.graduatedAt && c.launchedAt ? dur(c.graduatedAt - c.launchedAt) : "—", "n"),
     addr,
@@ -473,26 +521,45 @@ function coinRow(c) {
   return tr;
 }
 
-function figures() {
-  $("f-coins").textContent = int(coins.length);
-  $("f-trading").textContent = int(coins.filter((c) => c.graduated).length);
+// ---- render -------------------------------------------------------------
+
+function shown() {
+  const q = $("q").value.trim().toLowerCase();
+  return coins.filter((c) => {
+    if (filter !== "all" && phase(c) !== filter) return false;
+    if (!q) return true;
+    return (
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.symbol || "").toLowerCase().includes(q) ||
+      (c.address || "").toLowerCase().includes(q)
+    );
+  });
+}
+
+function totals() {
+  const by = { all: coins.length, filling: 0, trading: 0, expired: 0 };
+  let raised = 0n;
+  for (const c of coins) {
+    by[phase(c)]++;
+    if (c.raisedWei) { try { raised += BigInt(c.raisedWei); } catch (e) { /* skip */ } }
+  }
+  for (const k of ["all", "filling", "trading", "expired"]) $("ct-" + k).textContent = by[k] ? String(by[k]) : "";
+  $("t-coins").textContent = int(coins.length);
+  $("t-trading").textContent = int(by.trading);
+  $("t-raised").textContent = raised > 0n ? eth(raised.toString(), 3) + " ETH" : "—";
   $("st-count").textContent = coins.length + " coins";
 }
 
-function renderCoins() {
+function render() {
+  const rows = shown();
+  const tiles = $("tiles");
   const body = $("coins");
-  const q = $("q").value.trim().toLowerCase();
-  const rows = coins.filter(
-    (c) =>
-      !q ||
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.symbol || "").toLowerCase().includes(q) ||
-      (c.address || "").toLowerCase().includes(q),
-  );
+  tiles.textContent = "";
   body.textContent = "";
-  for (const c of rows) body.append(coinRow(c));
-  figures();
-  msg($("coins-note"), q && rows.length !== coins.length ? rows.length + " of " + coins.length + " shown" : "");
+  if (view === "tiles") for (const c of rows) tiles.append(tile(c));
+  else for (const c of rows) body.append(coinRow(c));
+  totals();
+  msg($("coins-note"), rows.length !== coins.length ? rows.length + " of " + coins.length + " shown" : "");
 }
 
 async function loadCoins() {
@@ -501,14 +568,49 @@ async function loadCoins() {
     if ($("chain").value) params.set("chainId", $("chain").value);
     if ($("source").value) params.set("source", $("source").value);
     coins = (await get("/api/coins?" + params.toString())).coins;
-    renderCoins();
+    render();
     clock();
   } catch (e) {
     msg($("coins-note"), e.message, "bad");
   }
 }
 
+// ---- chain activity -----------------------------------------------------
+
+async function loadSaturation() {
+  const host = $("activity");
+  try {
+    const s = await get("/api/saturation?windowDays=" + encodeURIComponent($("window").value));
+    host.textContent = "";
+    if (!s.chains.length) {
+      msg($("sat-note"), "Nothing launched in this period.");
+      return;
+    }
+    let fast = 0;
+    for (const c of s.chains) {
+      fast += c.fastGraduations;
+      for (const [k, v] of [
+        [chainLabel(c.chainId), ""],
+        ["  launched", int(c.launches)],
+        ["  reached market", pct(c.graduationRate)],
+        ["  median time", dur(c.medianTurnoverSecs)],
+      ]) {
+        const dt = document.createElement("dt");
+        dt.textContent = k;
+        const dd = document.createElement("dd");
+        dd.textContent = v;
+        host.append(dt, dd);
+      }
+    }
+    msg($("sat-note"), fast ? fast + " reached a market in under ten minutes." : "", fast ? "warn" : "");
+  } catch (e) {
+    host.textContent = "";
+    msg($("sat-note"), e.message, "bad");
+  }
+}
+
 // ---- live ---------------------------------------------------------------
+
 function feed(state, text) {
   $("led").className = "led " + state;
   $("feed-text").textContent = text;
@@ -549,10 +651,9 @@ function onLaunched(c) {
   if ($("chain").value && String(c.chainId) !== $("chain").value) return;
   if ($("source").value && c.source !== $("source").value) return;
   coins.unshift(c);
-  const row = coinRow(c);
-  row.className = "fresh";
-  $("coins").prepend(row);
-  figures();
+  render();
+  const fresh = document.querySelector('[data-address="' + addr + '"]');
+  if (fresh) fresh.classList.add("fresh");
   clock();
 }
 
@@ -560,22 +661,39 @@ function onGraduated(c) {
   if (!c || !c.address) return;
   const addr = String(c.address).toLowerCase();
   const held = coins.find((x) => (x.address || "").toLowerCase() === addr);
-  if (held) {
-    held.graduated = true;
-    if (c.graduatedAt) held.graduatedAt = c.graduatedAt;
-  }
-  const row = $("coins").querySelector('tr[data-address="' + addr + '"]');
-  if (row && held) {
-    const next = coinRow(held);
-    next.className = "fresh";
-    row.replaceWith(next);
-  }
-  figures();
+  if (!held) return;
+  held.graduated = true;
+  if (c.graduatedAt) held.graduatedAt = c.graduatedAt;
+  if (c.raisedWei) held.raisedWei = c.raisedWei;
+  if (c.pairSeededWei) held.pairSeededWei = c.pairSeededWei;
+  render();
+  const fresh = document.querySelector('[data-address="' + addr + '"]');
+  if (fresh) fresh.classList.add("fresh");
   clock();
-  if (!$("pane-density").hidden) loadSaturation();
+  loadSaturation();
 }
 
 // ---- start --------------------------------------------------------------
+
+function setView(next) {
+  view = next;
+  $("v-tiles").setAttribute("aria-pressed", String(next === "tiles"));
+  $("v-details").setAttribute("aria-pressed", String(next === "details"));
+  $("tiles").hidden = next !== "tiles";
+  $("details").hidden = next !== "details";
+  render();
+}
+
+for (const b of document.querySelectorAll("#filters button")) {
+  b.onclick = () => {
+    filter = b.dataset.filter;
+    for (const other of document.querySelectorAll("#filters button")) {
+      other.setAttribute("aria-pressed", String(other === b));
+    }
+    render();
+  };
+}
+
 async function start() {
   $("year").textContent = String(new Date().getFullYear());
   clock();
@@ -583,8 +701,8 @@ async function start() {
     const s = await get("/api/sources");
     chains = s.chains;
     sources = s.sources;
-    $("f-chains").textContent = int(chains.length);
-    $("f-pads").textContent = int(sources.length);
+    $("t-chains").textContent = int(chains.length);
+    $("t-pads").textContent = int(sources.length);
     $("title-meta").textContent =
       sources.length + (sources.length === 1 ? " launchpad" : " launchpads") +
       " on " + chains.length + (chains.length === 1 ? " chain" : " chains");
@@ -606,22 +724,26 @@ async function start() {
     feed("stop", "Offline");
     return;
   }
-  await loadCoins();
+  await Promise.all([loadCoins(), loadSaturation()]);
   connect();
   setInterval(() => {
     if (document.hidden) return;
     loadCoins();
-    if (!$("pane-density").hidden) loadSaturation();
+    loadSaturation();
   }, 60000);
+  // The tiles count down, so they are redrawn on their own clock.
+  setInterval(() => { if (!document.hidden && view === "tiles") render(); }, 20000);
   setInterval(clock, 30000);
 }
 
-$("reload").onclick = () => { loadCoins(); if (!$("pane-density").hidden) loadSaturation(); };
+$("v-tiles").onclick = () => setView("tiles");
+$("v-details").onclick = () => setView("details");
+$("reload").onclick = () => { loadCoins(); loadSaturation(); };
 $("window").onchange = loadSaturation;
 $("chain").onchange = loadCoins;
 $("source").onchange = loadCoins;
 $("limit").onchange = loadCoins;
-$("q").oninput = renderCoins;
+$("q").oninput = render;
 
 start();
 </script>

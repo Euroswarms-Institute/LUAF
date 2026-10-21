@@ -75,6 +75,22 @@ Each source keeps its own cursor, committed per page, so adding a launchpad back
 an interrupted backfill resumes where it stopped, and one unreachable endpoint does not stall the
 rest.
 
+## The money the events carry
+
+`Launched` publishes the target raise and the deadline; `Graduated` publishes what was actually
+taken and what went into the pool. The adapter was throwing all four away, which left the index able
+to say a coin exists and nothing about whether it worked. They are stored now — wei as decimal
+strings, because a wei amount fits neither a JS number nor a SQLite integer — and served as
+`targetRaiseWei`, `deadline`, `raisedWei` and `pairSeededWei`.
+
+Null, never zero, where a launchpad's event does not carry them: no target is not a target of
+nothing. A `generic` source can map its own equivalents through `map.targetRaise`, `map.deadline`
+and `graduateMap.raised` if its event has them.
+
+What is still missing is the *current* raise of a coin still filling, which no event publishes. That
+needs the indexer to read curve state per open coin, and is the obvious next thing to build —
+without it the terminal can show a target and a clock but not a progress bar.
+
 ## API
 
 | Route | What it gives |
@@ -82,7 +98,7 @@ rest.
 | `GET /` and `/terminal` | the terminal page |
 | `GET /health` | liveness, plus what has been indexed so far |
 | `GET /api/sources` | the chains and launchpads being indexed |
-| `GET /api/coins?chainId=&source=&limit=&offset=` | inventory, newest first |
+| `GET /api/coins?chainId=&source=&limit=&offset=` | inventory, newest first, with the amounts below |
 | `GET /api/saturation?windowDays=` | how crowded each chain is |
 | `WS /ws` | `coin:launched`, `coin:graduated` |
 
@@ -96,11 +112,17 @@ web fonts and no CDN: it reads only the API above and follows the WebSocket, so 
 answer the API can hand out the page, there is no second thing to deploy or keep in step, and it
 renders with the machine unplugged. It is read once at startup, so an edit needs a restart.
 
-Windows XP chrome in Trade Federation brass: a gradient title bar, beveled controls, tab control,
-group boxes, and sunken list views rendered as amber-on-charcoal screens. Tahoma for chrome, a
-console face for figures and addresses, with tabular numerals so columns do not jitter as they
-update. Colour says one thing each — green is trading, blue is still filling, amber is a figure,
-yellow is a figure not to trust, red is broken.
+An Explorer window: a task pane on the left for filters and totals, a Tiles view and a Details
+view, a toolbar, and a status bar. Windows XP chrome in brass — gradient title bar, beveled
+controls, sunken list views rendered as amber-on-charcoal screens. Tahoma for chrome, a console face
+for figures and addresses, with tabular numerals so columns do not jitter as they update. Colour
+says one thing each: green is trading, blue is still filling, red is past its deadline.
+
+Tiles are the launchpad view — a mark derived from the address, the ticker, what the coin is doing,
+and the money. A coin that reached a market shows what it took against what it needed. One still
+filling shows its target and how much of its window is gone. **No bar claims to show a current
+raise**, because the launch events do not publish one: that would need the indexer to read curve
+state, and a progress bar is the first thing a trader believes.
 
 The four legal documents live under `public/legal/` and are reached from the footer, which is the
 only place they appear. Nothing else on the page carries policy, disclaimer or implementation

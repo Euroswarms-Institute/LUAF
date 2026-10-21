@@ -48,10 +48,14 @@ export interface SourceConfig {
     creator?: string;
     name?: string;
     symbol?: string;
+    /** The argument naming what the curve has to take, if the event has one. */
+    targetRaise?: string;
+    /** The argument naming when it has to get there, if the event has one. */
+    deadline?: string;
   };
   /** `generic` only: an event that means the coin reached an open market. */
   graduateEvent?: string;
-  graduateMap?: { token: string };
+  graduateMap?: { token: string; raised?: string };
 }
 
 export interface ChainConfig {
