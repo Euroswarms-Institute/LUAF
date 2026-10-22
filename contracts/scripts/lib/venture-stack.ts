@@ -24,6 +24,12 @@ import { isAbsolute, join, resolve } from "path";
 //                    dollars (mainnet default 1000..10000, see ETH_USD_BAND)
 //   MIN_TARGET_ETH   smallest raise the platform finishes, immutable (default 2)
 //   GRADUATION_RAISE_ETH  open-curve graduation trigger (contract default 4)
+//                    Both have a floor the parameters do not show: the curve
+//                    starts at an FDV of START_MCAP_USD_8 ($750) over a supply
+//                    of 1e9, and k = 2*(target - p0*supply)/supply^2, so a
+//                    target under $750/price ETH underflows and every Open-mode
+//                    launch reverts. 0.25 ETH at $3,000. See DEPLOY.md; the
+//                    preflight checks it when ETH_USD is set.
 //   CREATION_FEE_ETH flat launch fee (default 0)
 //                    The last two are setParams values. They are applied here
 //                    when the deployer is ADMIN; otherwise the call is printed

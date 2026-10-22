@@ -86,10 +86,19 @@ async function main() {
     const signer = signers[0];
     const bal = await ethers.provider.getBalance(signer.address);
     ok(`${signer.address}`);
-    // The stack is ~12 transactions, one of them a factory at the contract size
-    // ceiling. 0.05 ETH covers it on the chains this targets with room to spare;
-    // below that the deploy can die midway, after the splitter and hook are paid for.
-    const floor = ethers.parseEther(process.env.MIN_DEPLOY_BALANCE_ETH ?? "0.05");
+    // Priced from the chain rather than fixed in ETH. The three deploys were
+    // measured on a fork of 46630 at 16,825,807 gas in total (tenant stack
+    // 13,551,813 over ten transactions, launcher 1,493,277, aggregator
+    // 1,780,717), so the floor is that times the live gas price, doubled for a
+    // price move mid-deploy. A fixed 0.05 ETH, which is what this said before
+    // the measurement, is about three hundred times the real cost and would
+    // refuse a deploy that is funded many times over.
+    const DEPLOY_GAS = 16_825_807n;
+    const gasPrice = BigInt((await ethers.provider.getFeeData()).gasPrice ?? 0n);
+    const floor = process.env.MIN_DEPLOY_BALANCE_ETH
+      ? ethers.parseEther(process.env.MIN_DEPLOY_BALANCE_ETH)
+      : DEPLOY_GAS * gasPrice * 2n;
+    ok(`gas price ${ethers.formatUnits(gasPrice, "gwei")} gwei, so all three deploys cost about ${ethers.formatEther(DEPLOY_GAS * gasPrice)} ETH`);
     if (bal < floor) fail(`balance ${ethers.formatEther(bal)} ETH is under ${ethers.formatEther(floor)} ETH; the deploy can run out midway`);
     else ok(`balance ${ethers.formatEther(bal)} ETH`);
     const expected = optional("DEPLOYER");
@@ -177,6 +186,44 @@ async function main() {
     const n = Number(raw);
     if (!Number.isInteger(n) || n < lo || n > hi) fail(`${name}=${raw} is outside ${lo}..${hi}`);
     else ok(`${name}=${n}`);
+  }
+
+  // The curve's start price is an FDV, not a number of wei, so the smallest
+  // raise that can graduate depends on the ETH/USD price the launches pass. The
+  // factory starts every coin at START_MCAP_USD_8 = $750 across a supply of
+  // 1e9, which in ETH is $750 / price -- and k, the curve's slope, is computed
+  // as 2*(target - p0*supply)/supply^2, so a target below that underflows and
+  // every launch reverts with InvalidParams.
+  //
+  // This is the one coupling in the parameters that is invisible from either
+  // side: 0.004 ETH is a perfectly reasonable graduation target and $3,000 is a
+  // perfectly reasonable ETH price, and together they are a stack that cannot
+  // launch anything. It was found by a launch reverting on a fork, which is the
+  // cheap way to find it.
+  const ethUsd = Number(process.env.ETH_USD ?? 0);
+  if (ethUsd > 0) {
+    console.log("\ncurve floor");
+    const price8 = BigInt(Math.round(ethUsd)) * 100_000_000n;
+    const floorWei = (750n * 100_000_000n * 10n ** 18n) / price8;
+    ok(`at $${ethUsd.toLocaleString()}/ETH the curve starts at ${ethers.formatEther(floorWei)} ETH of FDV`);
+    for (const [name, raw] of [["GRADUATION_RAISE_ETH", process.env.GRADUATION_RAISE_ETH], ["MIN_TARGET_ETH", process.env.MIN_TARGET_ETH]] as const) {
+      if (!raw) continue;
+      const wei = ethers.parseEther(raw);
+      if (wei <= floorWei) {
+        fail(`${name}=${raw} ETH is at or below that: every Open-mode launch at this price reverts. It must exceed ${ethers.formatEther(floorWei)} ETH`);
+      } else {
+        ok(`${name}=${raw} ETH clears it`);
+      }
+    }
+    // The Launcher's first buy happens inside the factory's 60-second launch
+    // window, where the per-wallet cap is target/100. Over that and the launch
+    // reverts, mined salt and all.
+    if (process.env.GRADUATION_RAISE_ETH) {
+      const cap = ethers.parseEther(process.env.GRADUATION_RAISE_ETH) / 100n;
+      ok(`first buy in the launch window is capped at ${ethers.formatEther(cap)} ETH (target/100)`);
+    }
+  } else {
+    warn("ETH_USD is not set, so the curve's start FDV was not checked against the graduation target");
   }
 
   console.log("");

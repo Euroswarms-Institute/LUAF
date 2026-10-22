@@ -39,8 +39,10 @@ Decide these first and write them down; three of them are in the table above.
   accepts. Fund it: it pays for each launch and its first buy.
 - `TREASURY` for the aggregator router — can be the same as
   `PROTOCOL_TREASURY`.
-- `PRIVATE_KEY` — the deployer. Needs about 0.05 ETH of headroom; the factory
-  alone is at the contract size ceiling.
+- `PRIVATE_KEY` — the deployer. It needs far less than it looks: the three
+  deploys were measured at **16,825,807 gas** in total, which at the live gas
+  prices is **0.00017 ETH on testnet** and **0.00036 ETH on mainnet**. Preflight
+  prices this from the chain rather than asserting a round number.
 
 ## The chains
 
@@ -78,20 +80,72 @@ The scripts detect a development node (`hardhat_metadata` / `anvil_nodeInfo`
 answer only there) and write `…​.fork.json` with `"fork": true`, so a
 rehearsal's addresses can never be picked up later as a deployment.
 
+## What things cost
+
+Measured on a fork of testnet 46630, not estimated. Gas prices as read from the
+chains: 0.01 gwei on testnet 46630, 0.0213 gwei on mainnet 4663.
+
+| | gas | testnet | mainnet |
+| --- | --- | --- | --- |
+| tenant stack (10 txs) | 13,551,813 | 0.000136 ETH | 0.000289 ETH |
+| launcher (2 txs) | 1,493,277 | 0.000015 ETH | 0.000032 ETH |
+| aggregator (2 txs) | 1,780,717 | 0.000018 ETH | 0.000038 ETH |
+| **all three** | **16,825,807** | **0.000168 ETH** | **0.000359 ETH** |
+| one launch + first buy | ~1,950,000 | 0.000020 ETH | 0.000042 ETH |
+
+Reproduce the launch figure with `scripts/measure-launch.ts` against a deployed
+stack on a fork. The per-launch number is also the floor the selection loop's
+reaper measures a format against: fees per copy below the cost of deploying
+another copy means the format is not worth keeping.
+
+## Two numbers that are coupled
+
+Neither is visible from the other side, and together they are how a stack gets
+deployed that cannot launch anything.
+
+**The graduation target has a floor set by the ETH price.** The factory starts
+every coin at an FDV of $750 across a supply of 1e9, and the curve's slope is
+`2*(target - p0*supply)/supply²`, so a target below the start FDV underflows and
+every Open-mode launch reverts with `InvalidParams`. In ETH that floor is
+`$750 / price`:
+
+| ETH price | smallest graduation target that works |
+| --- | --- |
+| $3,000 | 0.25 ETH |
+| $10,000 | 0.075 ETH |
+
+So `GRADUATION_RAISE_ETH=0.004`, which looks like a sensible dust-sized target,
+is a stack on which nothing can launch at any honest ETH price. It works on
+testnet only because the deployed ETH/USD band tops out at $10,000,000 and the
+launcher passes a fictitious price. Set `MIN_TARGET_ETH` and
+`GRADUATION_RAISE_ETH` above the floor for the price you intend to launch at,
+and set `ETH_USD` when running preflight so it checks them.
+
+**The first buy is capped at `target/100`.** `Launcher.launch` buys inside the
+factory's 60-second launch window, where the per-wallet cap is
+`targetRaiseWei / 100`. A first buy over that reverts the whole launch, mined
+salt and all. The operator's opening position is bounded by the graduation
+target, not by what it is willing to spend.
+
+Both were found by a launch reverting on a fork. Both are now preflight checks.
+
 ## Step 0 — preflight
 
 ```bash
 cd contracts
 RPC_URL=… CHAIN_ID=… PRIVATE_KEY=0x… \
 ADMIN=0x… TENANT_TREASURY=0x… PROTOCOL_TREASURY=0x… OPERATOR=0x… \
-PROTOCOL_BPS=1000 \
+PROTOCOL_BPS=1000 ETH_USD=3000 \
+MIN_TARGET_ETH=… GRADUATION_RAISE_ETH=… \
 npm run preflight
 ```
 
 Read-only, costs nothing, and exits non-zero on anything that would make the
 deploy wrong: a `CHAIN_ID` that disagrees with the RPC, no signer, a deployer
-under 0.05 ETH, infrastructure with no code at the address, a WETH that is not
-an ERC-20, a zero or unparseable immutable, a bps outside its range. It warns
+whose balance is under twice the measured gas cost at the live price,
+infrastructure with no code at the address, a WETH that is not an ERC-20, a zero
+or unparseable immutable, a bps outside its range, a graduation target under the
+curve's start FDV. It warns
 where a choice is legal but probably not what you want — `ADMIN` equal to the
 deployer, a contract treasury, an unfunded operator.
 
@@ -103,9 +157,13 @@ Do not proceed with failures. Warnings are yours to accept.
 TENANT_SLUG=acme \
 TENANT_TREASURY=0x… PROTOCOL_TREASURY=0x… PROTOCOL_BPS=1000 \
 ADMIN=0x… PLATFORM_FEE_BPS=55 REF_SHARE_BPS=2000 \
-MIN_TARGET_ETH=0.002 GRADUATION_RAISE_ETH=0.004 CREATION_FEE_ETH=0 \
+MIN_TARGET_ETH=0.3 GRADUATION_RAISE_ETH=0.5 CREATION_FEE_ETH=0 \
 npm run deploy:tenant
 ```
+
+Those two targets are above the 0.25 ETH curve floor at $3,000/ETH. Do not copy
+the 0.002/0.004 pair used in the fork rehearsals without reading the coupling
+section above: at an honest price they deploy a stack that rejects every launch.
 
 Ten transactions, nine if `ADMIN` is not the deployer: the `FeeSplitter`, a
 CREATE2 deployer, the vesting deployer, the hook at a mined address (the V4 flag

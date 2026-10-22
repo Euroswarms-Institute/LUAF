@@ -11,6 +11,7 @@
     "deploy:launcher": "hardhat run scripts/deploy-launcher.ts --network target",
     "deploy:aggregator": "hardhat run scripts/deploy-aggregator.ts --network target",
     "verify:deployment": "hardhat run scripts/verify-deployment.ts --network target",
+    "measure:launch": "hardhat run scripts/measure-launch.ts --network target",
     "fork:syndicate": "hardhat run scripts/fork-check-syndicate.ts"
   },
   "devDependencies": {

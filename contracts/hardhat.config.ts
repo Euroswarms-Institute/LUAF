@@ -43,7 +43,20 @@ const config: HardhatUserConfig = {
         : {}),
     },
     ...(RPC_URL
-      ? { target: { url: RPC_URL, chainId: CHAIN_ID || undefined, accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [] } }
+      ? {
+          target: {
+            url: RPC_URL,
+            chainId: CHAIN_ID || undefined,
+            accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+            // The default 20s is too short for the heavy transactions here: the
+            // factory is at the contract size ceiling and a launch deploys a
+            // token, a vesting contract and a V4 pool in one call. A client-side
+            // timeout does not cancel the transaction, it only stops you knowing
+            // whether it landed -- which during a deploy of immutable contracts
+            // is the worst state to be in.
+            timeout: Number(process.env.RPC_TIMEOUT_MS ?? 300_000),
+          },
+        }
       : {}),
   },
 };
