@@ -15,6 +15,14 @@
       "chainId": 46630,
       "address": "0x60e0DD86327F1dA36565c79aAe9f87070415963b",
       "startBlock": 128714375
+    },
+    {
+      "id": "lucre-testnet",
+      "label": "Lucreocracy (lucre, testnet)",
+      "kind": "venture",
+      "chainId": 46630,
+      "address": "0x2707Ed204ABB8A8d743cBb368dD06b9050bC2D86",
+      "startBlock": 140770636
     }
   ]
 }

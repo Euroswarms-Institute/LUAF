@@ -86,7 +86,7 @@ async function main() {
       v3Router,
     },
   };
-  const dir = deploymentsDir(false);
+  const dir = deploymentsDir();
   mkdirSync(dir, { recursive: true });
   const file = onFork ? forkFilename(`aggregator-${chainId}.json`) : `aggregator-${chainId}.json`;
   if (onFork) {

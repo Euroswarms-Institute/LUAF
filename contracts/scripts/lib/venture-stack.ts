@@ -44,10 +44,15 @@ import { isAbsolute, join, resolve } from "path";
  *  Overridable so a rehearsal on a fork does not leave invented addresses in
  *  contracts/deployments/ to be mistaken later for a real deploy. Set
  *  DEPLOYMENTS_DIR to somewhere disposable when rehearsing. */
-export function deploymentsDir(fromScriptsLib: boolean): string {
+export function deploymentsDir(): string {
   const override = process.env.DEPLOYMENTS_DIR?.trim();
   if (override) return isAbsolute(override) ? override : resolve(process.cwd(), override);
-  return join(__dirname, fromScriptsLib ? "../../deployments" : "../deployments");
+  // Always relative to this file, which lives in scripts/lib -- not to the
+  // caller. It used to take a "am I being called from scripts/lib" flag, which
+  // was meaningless (__dirname here is always scripts/lib) and inverted for
+  // every caller outside it: the launcher and aggregator artifacts of the first
+  // real deploy landed in scripts/deployments/ instead of deployments/.
+  return join(__dirname, "../../deployments");
 }
 
 /** True when the RPC on the other end is a local development node (hardhat or
@@ -253,7 +258,7 @@ export async function deployVentureStack(opts: StackOptions = {}) {
     console.log(`\n*** The RPC is a local development node, so this is a rehearsal: the`);
     console.log(`*** addresses above exist only on it. Saving as ${file}.`);
   }
-  const dir = deploymentsDir(true);
+  const dir = deploymentsDir();
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, file), JSON.stringify(out, null, 2));
   console.log(`saved ${join(dir, file)}  startBlock:`, startBlock);

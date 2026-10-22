@@ -1,0 +1,35 @@
+{
+  "chainId": 46630,
+  "tenant": {
+    "slug": "lucre",
+    "treasury": "0x1E5b98e730bBB10edaB8B13641d0a6538A8fa622",
+    "protocolTreasury": "0xC184389058052D0663D45E140468bA387FF67d16",
+    "protocolBps": 1000,
+    "splitter": "0x5da7bD3E6e45C410beFD0Ea56E7daA9303D4E8B8"
+  },
+  "admin": "0xb9C500C9FeA6486F2608BDd60Ec925Eb2CC49934",
+  "treasury": "0x5da7bD3E6e45C410beFD0Ea56E7daA9303D4E8B8",
+  "platformFeeBps": 55,
+  "refShareBps": 2000,
+  "curveBuyFeeBps": 50,
+  "curveSellFeeBps": 100,
+  "minTargetWei": "100000000000000",
+  "vanity": "0x2add",
+  "ethUsdBand8": [
+    "100000000",
+    "1000000000000000"
+  ],
+  "startBlock": 140770636,
+  "contracts": {
+    "hookDeployer": "0x46D3Dd39D114f52Dd349358625c723c1fa556bE9",
+    "hook": "0x165a16DeB56cCefc0C5c34cBF027093a857EA044",
+    "factory": "0x2707Ed204ABB8A8d743cBb368dD06b9050bC2D86",
+    "router": "0xaD5459ad2f5185AF502AD0681b032daD06eABaB7",
+    "updates": "0x608c81d3b7Ab887e99Ff773C7437892392953E13",
+    "tokenDeployer": "0x396D2948aB013011769370c3cfa85Ef648E271E5",
+    "vestingDeployer": "0x7175543E1E9b8d8DC1F84C7F16eFBc9090Ca927C",
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "weth": "0x33e4191705c386532ba27cBF171Db86919200B94",
+    "v3Router": "0x0000000000000000000000000000000000000000"
+  }
+}

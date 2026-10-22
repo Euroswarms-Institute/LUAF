@@ -66,7 +66,7 @@ async function main() {
     vanity: dep.vanity,
     tokenBytecode,
   };
-  const dir = deploymentsDir(false);
+  const dir = deploymentsDir();
   mkdirSync(dir, { recursive: true });
   const base = `launcher-${dep.tenant.slug}-${chainId}.json`;
   const file = onFork ? forkFilename(base) : base;

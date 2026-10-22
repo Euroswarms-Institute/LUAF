@@ -1,0 +1,15 @@
+{
+  "chainId": 46630,
+  "admin": "0xb9C500C9FeA6486F2608BDd60Ec925Eb2CC49934",
+  "treasury": "0xC184389058052D0663D45E140468bA387FF67d16",
+  "feeBps": 100,
+  "rebateBps": 3000,
+  "startBlock": 140770784,
+  "contracts": {
+    "registry": "0x4F8f43e2C4E6aE0fdE58BfaE7Dff18390847983d",
+    "router": "0x5F6d6050096ee1b9e9676E9cF9946bb82f40c100",
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "weth": "0x33e4191705c386532ba27cBF171Db86919200B94",
+    "v3Router": "0x0000000000000000000000000000000000000000"
+  }
+}

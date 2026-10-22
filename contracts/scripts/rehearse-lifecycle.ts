@@ -1,6 +1,8 @@
 import { ethers } from "hardhat";
 import { readFileSync } from "fs";
 
+import { isLocalNode } from "./lib/venture-stack";
+
 // The whole money path on one deployed stack: launch, buy to graduation, trade
 // the graduated pool, pull the fees into the splitter, split them.
 //
@@ -78,9 +80,16 @@ async function main() {
   const coin = await factory.allTokens((await factory.totalTokens()) - 1n);
   console.log(`\nlaunched ${coin}  first buy ${ethers.formatEther(firstBuy)} ETH  ${r1!.gasUsed} gas`);
 
-  // Past the 60s window, whose cap would otherwise bind every buy below.
-  await ethers.provider.send("evm_increaseTime", [61]);
-  await ethers.provider.send("evm_mine", []);
+  // Past the factory's 60-second launch window, whose tighter per-wallet cap
+  // would otherwise bind every buy below. A development node can be told to
+  // skip ahead; a real chain has to be waited out.
+  if (await isLocalNode()) {
+    await ethers.provider.send("evm_increaseTime", [61]);
+    await ethers.provider.send("evm_mine", []);
+  } else {
+    console.log("waiting out the 60s launch window...");
+    await new Promise((done) => setTimeout(done, 65_000));
+  }
 
   // 2) Buy to graduation. The curve takes what it needs and refunds the rest,
   //    so overshooting the last buy is free apart from gas.

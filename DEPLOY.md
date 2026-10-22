@@ -326,6 +326,55 @@ Nothing above earns anything on its own. In order:
    give the tenant a grant in `LUCRE_TENANTS_FILE`. A grant with no signing
    token is a dry run, which is the right first state.
 
+## Deployed: testnet 46630
+
+Live, verified, and earning. Everything below is on-chain, not a rehearsal.
+
+| | |
+| --- | --- |
+| tenant | `lucre`, protocolBps 1000 |
+| factory | `0x2707Ed204ABB8A8d743cBb368dD06b9050bC2D86` |
+| hook | `0x165a16DeB56cCefc0C5c34cBF027093a857EA044` |
+| router | `0xaD5459ad2f5185AF502AD0681b032daD06eABaB7` |
+| platform splitter | `0x5da7bD3E6e45C410beFD0Ea56E7daA9303D4E8B8` |
+| launcher | `0x514A18b9E0e45525C3e6A49eF737699dAcbED56e` |
+| creator splitter | `0xc05816A925E01AFF26cB5A6b7e20e82F9920f3F0` |
+| syndicate registry | `0x4F8f43e2C4E6aE0fdE58BfaE7Dff18390847983d` |
+| aggregator router | `0x5F6d6050096ee1b9e9676E9cF9946bb82f40c100` |
+| first coin | `0x2aDDc092Eba4D465118d7D42526923B5b60d6F1A`, graduated |
+
+`minTargetWei` is 0.0001 ETH. It is immutable and `setParams` can only raise
+`graduationRaiseWei` above it, so the lowest workable floor is the most flexible
+choice; the launches pass the band's top ETH price to clear the curve floor.
+
+The factory is admitted to the registry with the protocol treasury as
+beneficiary, so routed volume on its coins pays. The keeper ran against it: four
+transactions, one split, one coin registered, one coin sold for 0.0000358 ETH,
+no failures. The aggregator indexes it from block 140770636 as the
+`lucre-testnet` source, alongside three third-party coins.
+
+The first revenue the business has had, read off the chain:
+
+```
+tenant   0x1E5b…a622   0.000000407440 ETH
+protocol 0xC184…7d16   0.000000045271 ETH   exactly 1000 bps
+```
+
+The whole thing — three deploys, a coin from launch to graduated and traded, the
+registry admission and a keeper run — cost 0.000314 ETH of the 0.01 funded.
+
+The deployer key for this stack is disposable and testnet-only. It is also the
+factory's `protocolAdmin` and the registry's immutable `admin`, which is
+acceptable for a stack whose purpose is to produce the first real fee numbers
+and unacceptable for mainnet.
+
+### To make the keeper run on its own
+
+`.github/workflows/keeper.yml` skips every run until both exist:
+
+- secret `VENTURE_KEEPER_PK` — a funded keeper wallet
+- variable `KEEPER_DEPLOYMENT` = `../contracts/deployments/tenant-lucre-46630.json`
+
 ## Known decision, not yet made
 
 The aggregator's premise was that Robinhood Chain had no trading terminal. Axiom
