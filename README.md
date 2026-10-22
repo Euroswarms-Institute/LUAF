@@ -242,6 +242,28 @@ The rules come from [Abiogenesis](https://github.com/IlumCI/Abiogenesis), which 
 selection pressures keep producing novelty: frequency-dependent payoff (`--streams`), the poorest-first
 reaper (`--reap-poor`), one-point crossover (`--sex`) and an order-2 mutation model (`--learned-mut`).
 
+### Where the fee numbers come from
+
+`core/scripts/launch-batch.mjs` launches real coins across a set of launch formats, graduates each one
+and trades it, then reads the income back with the same `collectIncome` the persistent loop uses. It goes
+through `publish()` rather than a hand-rolled launch, so it exercises the production path; the designer
+is skipped by handing it a `Product` directly, because what a format earns does not depend on the prose
+in its description.
+
+```bash
+cd core
+LUCRE_DRY_RUN=0 LUCRE_PRIVATE_KEY=0x… LUCRE_RPC_URL=… \
+LAUNCHER_DEPLOYMENT=../contracts/deployments/launcher-lucre-46630.json \
+ETH_USD_8=1000000000000000 npm run launch:batch -- 6 2
+```
+
+**What it measures, and what it does not.** Every coin is traded on the same schedule, so the
+differences between formats are differences in fee *capture* — how the hook's toll and the founder tax
+split under each parameter set — and not differences in demand. Demand is what the aggregator's
+market-wide copy counts are for, and it cannot be synthesised. The output is a measured fee-mechanics
+table, which is the thing the reaper had no source for; it is not evidence that one format sells better
+than another.
+
 Our own copies are counted exactly. The rest of the market comes from the `aggregator` service in this repo:
 
 ```bash

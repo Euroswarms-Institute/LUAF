@@ -16,6 +16,15 @@ import { readFileSync } from "fs";
 //
 // Impersonates the operator, so it is a fork-only measurement.
 
+/** The factory accepts the vanity mark at either end of the address:
+ *  `a & 0xffff == vanity || a >> 144 == vanity` (VentureFactory L505). Mining
+ *  for the prefix alone is correct and takes about twice as many tries, which
+ *  on this mark is twenty-odd seconds of keccak per coin instead of ten. */
+function hasMark(addr: string, mark: bigint): boolean {
+  const a = BigInt(addr);
+  return (a >> 144n) === mark || (a & 0xffffn) === mark;
+}
+
 async function main() {
   const dep = JSON.parse(readFileSync(process.env.LAUNCHER_DEPLOYMENT!, "utf8"));
   const tenant = JSON.parse(readFileSync(process.env.TENANT_DEPLOYMENT!, "utf8"));
@@ -60,7 +69,7 @@ async function main() {
   for (let i = 0n; i < 8_000_000n; i++) {
     tries++;
     const s = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-    if ((BigInt(ethers.getCreate2Address(c.tokenDeployer, s, hash)) >> 144n) === mark) { salt = s; break; }
+    if (hasMark(ethers.getCreate2Address(c.tokenDeployer, s, hash), mark)) { salt = s; break; }
   }
   if (!salt) throw new Error("no vanity salt");
   console.log(`salt: ${tries} tries, ${((Date.now() - t0) / 1000).toFixed(1)}s of keccak`);
