@@ -54,7 +54,12 @@ const run = {
 //   minHoldForDividends  a whole-token floor to earn anything
 const FORMATS = [
   { label: "baseline", tax: { buyTaxBps: 200, sellTaxBps: 300, devBps: 4000, dividendBps: 3000, liquidityBps: 1500, mmBps: 1500 }, dividendMode: 0, minHoldForDividends: 0 },
-  { label: "no-tax", tax: { buyTaxBps: 0, sellTaxBps: 0, devBps: 2500, dividendBps: 2500, liquidityBps: 2500, mmBps: 2500 }, dividendMode: 0, minHoldForDividends: 0 },
+  // 0/0 is not a format that can be tested: the hook's sniper-premium path
+  // leaves a V4 delta unsettled when there is no founder tax, so the coin
+  // reverts every trade for its first fifteen seconds. validateSpec refuses it.
+  // Taxing one side only is the nearest thing that works, and a more
+  // interesting question anyway -- whether charging exits alone earns more.
+  { label: "exit-tax-only", tax: { buyTaxBps: 0, sellTaxBps: 400, devBps: 2500, dividendBps: 2500, liquidityBps: 2500, mmBps: 2500 }, dividendMode: 0, minHoldForDividends: 0 },
   { label: "max-tax", tax: { buyTaxBps: 400, sellTaxBps: 400, devBps: 4000, dividendBps: 3000, liquidityBps: 1500, mmBps: 1500 }, dividendMode: 0, minHoldForDividends: 0 },
   { label: "dev-heavy", tax: { buyTaxBps: 300, sellTaxBps: 300, devBps: 7000, dividendBps: 1000, liquidityBps: 1000, mmBps: 1000 }, dividendMode: 0, minHoldForDividends: 0 },
   { label: "liquidity-heavy", tax: { buyTaxBps: 300, sellTaxBps: 300, devBps: 1000, dividendBps: 1000, liquidityBps: 7000, mmBps: 1000 }, dividendMode: 0, minHoldForDividends: 0 },
@@ -159,6 +164,11 @@ if (launched.length > 0) {
   await new Promise((done) => setTimeout(done, 65_000));
   for (const l of launched) {
     l.graduated = await graduate(l.token);
+    // The hook charges a sniper premium for 15 seconds after graduation. It is
+    // a different fee regime from the one a coin spends its life in, so trading
+    // inside it would measure something else, and on a coin with no founder tax
+    // it reverts the trade outright.
+    if (l.graduated) await new Promise((r) => setTimeout(r, 16_000));
     l.swaps = l.graduated ? await trade(l.token) : 0;
     console.log(`${l.format.padEnd(18)} ${l.token}  graduated ${l.graduated}  swaps ${l.swaps}`);
   }

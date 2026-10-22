@@ -120,6 +120,28 @@ export function validateSpec(s: LaunchSpec): void {
   if (s.dividendMode === 1 && s.minHoldForDividends === 0) {
     throw new SpecError("a tiered dividend ladder needs a non-zero floor");
   }
+  // Both sides zero makes the coin untradeable for the first fifteen seconds
+  // after it graduates, which is the window a launch actually trades in.
+  //
+  // The hook charges a sniper premium of 15% for five seconds and 5% for ten
+  // more. When the founder tax is zero that premium is the only founder-side
+  // fee, so VentureFeeHook.afterSwap takes its `else if (sniperFee > 0)` branch
+  // and calls _placeQuotes alone -- discarding the amount it reports as used --
+  // instead of _settleBuckets. Whatever is left over stays as an unsettled V4
+  // delta and the PoolManager reverts the trade with CurrencyNotSettled().
+  //
+  // Observed on testnet 46630: a 0/0 coin reverted on every trade for its
+  // first fifteen seconds and then traded normally, using 269,242 gas. The fix
+  // belongs in the hook, which lives in DoublePlus and is vendored read-only
+  // here, so until it lands this refuses to launch a format that cannot be
+  // traded when it matters.
+  if (t.buyTaxBps === 0 && t.sellTaxBps === 0) {
+    throw new SpecError(
+      "buyTaxBps and sellTaxBps cannot both be 0: the hook's sniper-premium path leaves a " +
+        "V4 delta unsettled when there is no founder tax, so the coin cannot be traded for " +
+        "15s after graduation",
+    );
+  }
   if (s.firstBuyWei < 0n) throw new SpecError("firstBuyWei cannot be negative");
   if (!s.profile.trim()) throw new SpecError("spec needs a profile");
   if (!s.tenant.trim()) throw new SpecError("spec needs a tenant");

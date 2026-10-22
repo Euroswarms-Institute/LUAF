@@ -307,3 +307,33 @@ describe("Rng", () => {
     expect(r.below(0)).toBe(0);
   });
 });
+
+describe("the untradeable zero-tax format", () => {
+  it("repair lifts 0/0 to something the factory's hook can trade", () => {
+    const s = repair(baseSpec({ tenant: "t", tax: { buyTaxBps: 0, sellTaxBps: 0, devBps: 2500, dividendBps: 2500, liquidityBps: 2500, mmBps: 2500 } }));
+    expect(s.tax.buyTaxBps + s.tax.sellTaxBps).toBeGreaterThan(0);
+    expect(() => validateSpec(s)).not.toThrow();
+  });
+
+  it("validateSpec refuses 0/0, because the coin cannot be traded for 15s after graduation", () => {
+    const s = baseSpec({ tenant: "t", tax: { buyTaxBps: 0, sellTaxBps: 0, devBps: 2500, dividendBps: 2500, liquidityBps: 2500, mmBps: 2500 } });
+    expect(() => validateSpec(s)).toThrow(/cannot both be 0/);
+  });
+
+  it("one side at zero is fine: the sniper premium is not the only founder fee", () => {
+    for (const tax of [
+      { buyTaxBps: 0, sellTaxBps: 300, devBps: 2500, dividendBps: 2500, liquidityBps: 2500, mmBps: 2500 },
+      { buyTaxBps: 300, sellTaxBps: 0, devBps: 2500, dividendBps: 2500, liquidityBps: 2500, mmBps: 2500 },
+    ]) {
+      expect(() => validateSpec(baseSpec({ tenant: "t", tax }))).not.toThrow();
+    }
+  });
+
+  it("no mutation of a valid spec can reach 0/0", () => {
+    let spec = baseSpec({ tenant: "t" });
+    for (let i = 0; i < 2000; i++) {
+      spec = mutate(spec, new Rng(BigInt(i + 1)), defaultSelectionConfig, defaultGenePool);
+      expect(spec.tax.buyTaxBps + spec.tax.sellTaxBps).toBeGreaterThan(0);
+    }
+  });
+});

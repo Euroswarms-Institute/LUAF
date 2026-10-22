@@ -388,6 +388,13 @@ export function repair(s: LaunchSpec): LaunchSpec {
 
   tax.buyTaxBps = Math.min(400, Math.max(0, tax.buyTaxBps));
   tax.sellTaxBps = Math.min(400, Math.max(0, tax.sellTaxBps));
+  // 0 is in the gene pool for each side, so crossover and mutation can reach
+  // 0/0 -- a coin that cannot be traded for fifteen seconds after it graduates,
+  // because the hook's sniper-premium path leaves a V4 delta unsettled when
+  // there is no founder tax. validateSpec refuses it (see spec.ts), so without
+  // this a mutation would break the loop rather than produce a bad coin. One
+  // side is lifted to the smallest non-zero value the pool offers.
+  if (tax.buyTaxBps === 0 && tax.sellTaxBps === 0) tax.sellTaxBps = 100;
   out.minHoldForDividends = Math.min(10_000_000, Math.max(0, out.minHoldForDividends));
   if (tax.dividendBps === 0) {
     out.minHoldForDividends = 0;
