@@ -178,7 +178,7 @@ if (launched.length === 0) { console.log("\nnothing launched (dry run)"); proces
 
 // The income table, read back off the chain by the same collector the
 // persistent loop uses.
-const rows = await collectIncome({ dep, rpcUrl: run.rpcUrl }, { chunk: 10_000n });
+const rows = await collectIncome(dep, run.rpcUrl, { chunk: 10_000n });
 const specs = bySpec(rows);
 const byFormat = new Map();
 for (const l of launched) {

@@ -107,7 +107,7 @@ for (const p of todo) {
   console.log(`  swaps ${swaps}`);
 }
 
-const rows = await collectIncome({ dep, rpcUrl }, { chunk: 10_000n });
+const rows = await collectIncome(dep, rpcUrl, { chunk: 10_000n });
 const specs = [...bySpec(rows).values()];
 const eth = (w) => (Number(w) / 1e18).toFixed(18);
 console.log(`\n${"specId".padEnd(12)} ${"coins".padStart(5)} ${"grad".padStart(4)} ${"total ETH".padStart(21)} ${"creator".padStart(21)} ${"platform".padStart(21)} ${"swaps".padStart(5)} turnover`);

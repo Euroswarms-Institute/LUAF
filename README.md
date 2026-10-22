@@ -264,6 +264,13 @@ market-wide copy counts are for, and it cannot be synthesised. The output is a m
 table, which is the thing the reaper had no source for; it is not evidence that one format sells better
 than another.
 
+The first batch ran on testnet 46630 and is written up in `docs/first-batch.md`. It separates the
+formats cleanly — the ordering is exactly founder tax times dev bucket — but all of that income is
+denominated in the coin, because that is how the hook took it, and `totalEthWei` excludes
+coin-denominated fees by design. So the ETH figure is identical across all six formats and a fitness
+function dividing it would select on noise. Ranking formats does not need ETH; the reap test does. That
+is an open decision, not a solved problem.
+
 Our own copies are counted exactly. The rest of the market comes from the `aggregator` service in this repo:
 
 ```bash

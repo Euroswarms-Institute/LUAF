@@ -1,0 +1,190 @@
+{
+  "chainId": 46630,
+  "tenant": "lucre",
+  "launcher": "0x514A18b9E0e45525C3e6A49eF737699dAcbED56e",
+  "at": 1792680724,
+  "specs": [
+    {
+      "specId": "0xad6a7b1d8a583cc632e0d8ce02793a45c9724433921b87d0100e2380f768d01f",
+      "tokens": [
+        "0x2aDDc092Eba4D465118d7D42526923B5b60d6F1A"
+      ],
+      "graduated": 1,
+      "totalEthWei": "985276671366",
+      "creatorEthWei": "328530816441",
+      "platformEthWei": "656745854925",
+      "swaps": 4,
+      "meanTurnoverSecs": 77,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792676060
+    },
+    {
+      "specId": "0xcb34162911e91ad9cfb0b73586f1213ec89383450e7720c5d94cba4122ca1ce8",
+      "tokens": [
+        "0x1f3B86Aa39bC5f63F67cE3479dbE962f22592ADD"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 525,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680126
+    },
+    {
+      "specId": "0xff9f1a9bc6b0a20429fde581b9d3db8d35be814e7bc1f73787fd4ee10dbc5f79",
+      "tokens": [
+        "0x2ADD9F6FC78adFc65484b1409B58f6fc860b9C24"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 493,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680124
+    },
+    {
+      "specId": "0xa0fffc99be6f3abaf7456a683b6af03369110738287ab7f0fa7369629494299a",
+      "tokens": [
+        "0x2add7314b10Da389D18ABB170DBb2bbe29a5a3fC"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 469,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680117
+    },
+    {
+      "specId": "0x158ea3bd1c27eaee11bb72ccfe61dc95977a11f0c529e22a243ed60808acc92d",
+      "tokens": [
+        "0x2ADDa160C444A9C16A81A5B5198035b08eeb1F17"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 448,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680108
+    },
+    {
+      "specId": "0xab0527fa35bea37426895c4f9ade53ce37b8e36ee707b7c47ef960c6675cae5b",
+      "tokens": [
+        "0x2add5ad164274e72c59aFC0D8aF713559971CDEd"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 420,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680106
+    },
+    {
+      "specId": "0x8c0ba769eafb5ca23ba1d0a00cbfa531516acc24dc83956a968dfa54340070fc",
+      "tokens": [
+        "0x2add7c987a7C5F52fD076825faC9052eB0628d14"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 397,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680097
+    },
+    {
+      "specId": "0x3dbf890bdb8cbc6c57ffd565ff0356f5f743221bd98d111f8235db7fe2ea69f4",
+      "tokens": [
+        "0x00c17Ce4f8610B23B5994764f4aA76eB86822add"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 373,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680088
+    },
+    {
+      "specId": "0x80982b565fdd06c868f94f0da0c6d31c329bd222e3fd7e6f571b365866d27aff",
+      "tokens": [
+        "0x2ADD43e1ae7f5438B4fdabc374B70CfB6b6f9831"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 376,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680053
+    },
+    {
+      "specId": "0x26d3af21e993652dc62c3f6c2079b01d6e61cdf4d1fe3c7c2da8a83825c5da63",
+      "tokens": [
+        "0x6FD005f5a2D8FcfD1Be0F6d50a2678E0f7f32ADD"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 351,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680048
+    },
+    {
+      "specId": "0x3b60fbf2e5afc696e33fd7b505e7206e6562b880adc9a0b9d56c1adc20495708",
+      "tokens": [
+        "0xE8f3c3cCf45D4288614B138f00078BA6aCE72ADD"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 1,
+      "meanTurnoverSecs": 188,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680045
+    },
+    {
+      "specId": "0xa9f3913dc33f80b9ae59001ec72ba64556f0e6e13cb5ede213f23d540052bafe",
+      "tokens": [
+        "0x2Fd3630CD39f0a06643a7c1E4E430A0668282ADD"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 176,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680041
+    },
+    {
+      "specId": "0xc957acd6c5be31888f0ebd2537640a20c7d4922c1e29d3b7f616eeb83fdf9acf",
+      "tokens": [
+        "0xb7B9601a2F771EaBA98FDa29476C0A07A4172ADD"
+      ],
+      "graduated": 1,
+      "totalEthWei": "503012001019",
+      "creatorEthWei": "50301200101",
+      "platformEthWei": "452710800918",
+      "swaps": 3,
+      "meanTurnoverSecs": 190,
+      "turnoversComplete": 1,
+      "lastLaunchAt": 1792680011
+    }
+  ]
+}
