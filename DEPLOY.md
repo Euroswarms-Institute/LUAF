@@ -98,6 +98,32 @@ stack on a fork. The per-launch number is also the floor the selection loop's
 reaper measures a format against: fees per copy below the cost of deploying
 another copy means the format is not worth keeping.
 
+### One coin, launch to earning
+
+`scripts/rehearse-lifecycle.ts` runs the whole money path against a deployed
+stack: launch through the `Launcher`, buy to graduation, trade the graduated
+pool, pull the fees into the splitter, split them. On a stack deployed with
+`MIN_TARGET_ETH=0.0001 GRADUATION_RAISE_ETH=0.0001` and the band's top ETH price
+it came to **0.00017 ETH** in total — 5,491,949 gas (0.000055 ETH) plus
+0.000115 ETH of principal, of which the 0.0001 ETH raise is gone for good:
+graduated liquidity is owned by the factory and can only be added to.
+
+What came out the other end, on the smallest raise the curve will carry:
+
+```
+platform splitter   0.00000045 ETH in the factory ledger + 279,003 of the coin
+launcher (creator)  0.00000005 ETH in the factory ledger
+split               tenant 0.00000041 / protocol 0.000000045  (1000 bps, exact)
+keeper              sold 25% of the coin for 0.0000359 ETH, 3 txs, 0 failures
+```
+
+The fees arriving in the coin rather than in ETH is the design, not a fault,
+and the keeper converting them is the step that makes them money.
+
+So a day's faucet of 0.01 ETH funds the whole stack plus about fifty complete
+coin lifecycles. Funding was never the constraint; the graduation target is,
+because that part is spent.
+
 ## Two numbers that are coupled
 
 Neither is visible from the other side, and together they are how a stack gets
@@ -128,6 +154,44 @@ salt and all. The operator's opening position is bounded by the graduation
 target, not by what it is willing to spend.
 
 Both were found by a launch reverting on a fork. Both are now preflight checks.
+
+## The router needs gas headroom, not an estimate
+
+A `VentureRouter` trade sent at exactly its own estimated gas limit **runs out
+of gas**. Measured against a freshly graduated pool on a fork of 46630:
+
+```
+estimateGas             849,368
+limit   849,368         FAILED: ran out of gas
+limit   900,000         OK, used 785,359
+limit 2,000,000         OK, used 785,359
+```
+
+The estimate is *higher* than the gas the transaction actually consumes, and it
+still fails at that limit. The trade runs inside `PoolManager.unlock`, so the
+work happens in a nested call, which EIP-150 gives at most 63/64 of the gas
+remaining at the call; with a tight limit the inner frame is starved even though
+the total would have been enough. How much gas is consumed therefore depends on
+the limit it was sent with, which is the one thing `estimateGas` cannot measure,
+because it binary-searches on the total.
+
+It bites hardest where it costs most. The first trade on a newly graduated pool
+needs the most gas, and the keeper's first sale of a coin's fee income is often
+that trade — so without headroom the keeper fails exactly when fees first exist.
+`keeper/venture-treasury.mjs` now sends router trades and `redeem6909` at 1.25x
+the estimate (`GAS_HEADROOM_BPS`). Anything else that trades through the router,
+including a front end, needs the same.
+
+## Rehearsing against a fork: two settings
+
+- `CONFIRMATIONS=1` for the keeper. The default of 2 is right for a real chain
+  and hangs forever on an automine node, which mines a block per transaction and
+  so never produces the second confirmation.
+- `SWAP_GAS_LIMIT` in the lifecycle script, for the headroom above.
+
+`CONFIRMATIONS=0` is rejected: `wait(0)` returns without waiting for inclusion,
+so every later transaction in the run reuses a nonce the previous one took. It
+failed three of eleven transactions the first time it was tried.
 
 ## Step 0 — preflight
 

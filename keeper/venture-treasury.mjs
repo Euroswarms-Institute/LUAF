@@ -69,7 +69,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const REGIME_FILE = process.env.REGIME_FILE?.trim() || join(here, "state/regime.json");
 const SLIPPAGE_BPS = BigInt(envInt("SLIPPAGE_BPS", 300, 0, 5_000));
 const MAX_SPEND_WEI = envEth("MAX_SPEND_ETH", "0.01");
-const CONFIRMATIONS = envInt("CONFIRMATIONS", 2, 0, 64);
+// At least 1. wait(0) resolves without waiting for inclusion, so every later
+// transaction in the run is built on a nonce the previous one already took and
+// fails with "nonce has already been used" -- which it did, on three of eleven,
+// the first time this was run with 0.
+const CONFIRMATIONS = envInt("CONFIRMATIONS", 2, 1, 64);
+// Gas limit as a multiple of the estimate for the router's V4 path. 12,500 bps
+// = 1.25x. The measured shortfall was about 6%; see withHeadroom below for why
+// the estimate is not a limit the transaction can live at.
+const GAS_HEADROOM_BPS = BigInt(envInt("GAS_HEADROOM_BPS", 12_500, 10_000, 30_000));
 
 const ZERO = ethers.ZeroAddress;
 const ZERO_POOL = ethers.ZeroHash;
@@ -142,7 +150,10 @@ async function serviceSplitter(all) {
   for (const asset of assets) {
     const claims = await pm.balanceOf(dep.tenant.splitter, BigInt(asset));
     if (claims > 0n) {
-      await send(`splitter.redeem6909 ${asset} ${claims}`, () => splitter.redeem6909(asset, claims));
+      // redeem6909 drives PoolManager.unlock as well, so it is the same
+      // nested-call shape as a router trade and needs the same headroom.
+      const ov = await withHeadroom(splitter.redeem6909, [asset, claims]);
+      await send(`splitter.redeem6909 ${asset} ${claims}`, () => splitter.redeem6909(asset, claims, ov));
       stats.redeemed++;
     }
   }
@@ -151,6 +162,34 @@ async function serviceSplitter(all) {
     await send(`splitter.split ${asset}`, () => splitter.split(asset));
     stats.splits++;
   }
+}
+
+/** A gas limit with headroom over the estimate, for the router's V4 path.
+ *
+ *  Not belt and braces: a VentureRouter trade at exactly its own estimated gas
+ *  limit runs out of gas, while the same trade with more succeeds and uses
+ *  *less* than the estimate. Measured on a fork of 46630 against a freshly
+ *  graduated pool: estimateGas said 849,368, that limit failed, 900,000
+ *  succeeded and consumed 785,359.
+ *
+ *  The cause is EIP-150. The trade runs inside PoolManager.unlock, so the work
+ *  happens in a nested call, which may be given at most 63/64 of the gas
+ *  remaining at the call. With a tight limit the inner frame is starved even
+ *  though the total would have been enough, and how much gas is actually
+ *  consumed therefore depends on the limit it was sent with -- which is exactly
+ *  the case estimateGas cannot measure, because it binary-searches on the total.
+ *
+ *  This matters most at the moment it costs most: the first trade on a newly
+ *  graduated pool needs the most gas, and the keeper's first sale of a coin's
+ *  fee income is often that trade. Without the headroom the keeper fails
+ *  precisely when fees first exist. */
+async function withHeadroom(method, args, overrides = {}) {
+  // A dry run sends nothing, and estimating can revert for reasons a dry run
+  // deliberately does not resolve -- an approval it did not make, a claim it did
+  // not redeem. Estimating anyway would turn "nothing happened" into a crash.
+  if (DRY_RUN) return overrides;
+  const est = await method.estimateGas(...args, overrides);
+  return { ...overrides, gasLimit: (est * GAS_HEADROOM_BPS) / 10_000n };
 }
 
 /** Sell part of one coin holding to ETH, floored at the quote less slippage. */
@@ -174,7 +213,8 @@ async function sellCoin(coin, sellBps) {
   }
   if (quote < MIN_SELL_WEI) { stats.skipped++; return; }
   const minOut = (quote * (10_000n - SLIPPAGE_BPS)) / 10_000n;
-  await send(`sell ${coin} ${amount} -> >=${ethers.formatEther(minOut)} ETH`, () => router.sell(coin, amount, "0x", minOut));
+  const overrides = await withHeadroom(router.sell, [coin, amount, "0x", minOut]);
+  await send(`sell ${coin} ${amount} -> >=${ethers.formatEther(minOut)} ETH`, () => router.sell(coin, amount, "0x", minOut, overrides));
   stats.sold++;
   stats.soldEthWei += quote;
 }
